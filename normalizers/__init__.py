@@ -12,6 +12,7 @@ from .inn import InnNormalizer
 from .organization import OrganizationNormalizer
 from .person import PersonNormalizer
 from .phone import PhoneNormalizer
+from .text import TextNormalizer
 
 
 REGISTRY: dict[str, type[BaseNormalizer]] = {
@@ -21,6 +22,7 @@ REGISTRY: dict[str, type[BaseNormalizer]] = {
     "phone": PhoneNormalizer,
     "organization": OrganizationNormalizer,
     "email": EmailNormalizer,
+    "text": TextNormalizer,
 }
 
 
@@ -31,6 +33,7 @@ LABELS: dict[str, str] = {
     "phone": "Номера телефонов",
     "organization": "Названия организаций",
     "email": "Email-адреса",
+    "text": "Текстовые значения",
 }
 
 
