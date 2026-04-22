@@ -1,0 +1,11 @@
+streamlit>=1.32.0
+pandas>=2.0.0
+openpyxl>=3.1.0
+pymorphy3>=2.0.2
+pymorphy3-dicts-ru>=2.4.0
+natasha>=1.6.0
+pymorphy2-dicts-ru>=2.4.0
+setuptools>=70.0.0
+phonenumbers>=8.13.0
+rapidfuzz>=3.6.0
+XlsxWriter>=3.1.0
