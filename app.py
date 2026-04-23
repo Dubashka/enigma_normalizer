@@ -30,7 +30,7 @@ from utils.detect import scan_dataframe
 
 
 st.set_page_config(
-    page_title="Enigma · Тестовый стенд нормализации",
+    page_title="Normalizer",
     page_icon="🧪",
     layout="wide",
 )
@@ -148,7 +148,7 @@ def _run_for_column(df: pd.DataFrame, col: str, data_type: str) -> list[Normaliz
 # ---------------------------------------------------------------------------
 # Шапка
 # ---------------------------------------------------------------------------
-st.title("🧪 Enigma · Тестовый стенд нормализации")
+st.title("🧪 Normalizer")
 st.caption(
     "Проверка отдельных алгоритмов нормализации перед этапом анонимизации. "
     "Система сама распознаёт тип данных в каждой колонке и запускает нужный алгоритм."
