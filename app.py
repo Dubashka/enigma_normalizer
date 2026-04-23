@@ -44,15 +44,18 @@ def _init_state():
     defaults = {
         "uploaded_name": None,
         "sheets_data": {},          # {sheet_name: DataFrame}
-        "sheet": None,
-        "scans": [],                # list[ColumnScan] — результат сканирования листа
-        "col_selected": {},         # {column: bool} — включать в нормализацию
-        "col_type_overrides": {},   # {column: user_override_type | None}
-        "results": {},              # {column: list[NormalizationCandidate]}
-        "selections": {},           # {column: {idx: bool}}
-        "canonicals": {},           # {column: {idx: str}}
+        "sheets": [],               # выбранные пользователем листы для нормализации
+        "active_sheet": None,       # текущий лист, на который смотрит UI (внутри вкладки)
+        # Состояние, ключи верхнего уровня — имя листа. Это позволяет
+        # обрабатывать несколько листов в одном файле без смешения данных.
+        "scans_by_sheet": {},            # {sheet: list[ColumnScan]}
+        "col_selected_by_sheet": {},     # {sheet: {column: bool}}
+        "col_type_overrides_by_sheet": {},  # {sheet: {column: type|None}}
+        "results_by_sheet": {},          # {sheet: {column: list[NormalizationCandidate]}}
+        "selections_by_sheet": {},       # {sheet: {column: {idx: bool}}}
+        "canonicals_by_sheet": {},       # {sheet: {column: {idx: str}}}
         "applied": False,
-        "normalized_df": None,
+        "normalized_by_sheet": {},       # {sheet: DataFrame}
         "mapping_payload": None,
     }
     for k, v in defaults.items():
@@ -74,8 +77,9 @@ def _read_excel(file_bytes: bytes) -> dict[str, pd.DataFrame]:
 
 def _reset_after_upload():
     for key in (
-        "sheet", "scans", "col_selected", "col_type_overrides",
-        "results", "selections", "canonicals", "normalized_df", "mapping_payload",
+        "sheets", "active_sheet", "scans_by_sheet", "col_selected_by_sheet",
+        "col_type_overrides_by_sheet", "results_by_sheet", "selections_by_sheet",
+        "canonicals_by_sheet", "normalized_by_sheet", "mapping_payload",
     ):
         if isinstance(st.session_state.get(key), dict):
             st.session_state[key] = {}
@@ -86,43 +90,53 @@ def _reset_after_upload():
     st.session_state.applied = False
 
 
-def _scan_sheet(df: pd.DataFrame) -> None:
+def _ensure_sheet_state(sheet: str):
+    """Гарантирует наличие контейнеров состояния для листа."""
+    for container in (
+        "scans_by_sheet", "col_selected_by_sheet", "col_type_overrides_by_sheet",
+        "results_by_sheet", "selections_by_sheet", "canonicals_by_sheet",
+    ):
+        st.session_state[container].setdefault(sheet, [] if container == "scans_by_sheet" else {})
+
+
+def _scan_sheet(sheet: str, df: pd.DataFrame) -> None:
     """Сканирует все колонки листа и заполняет col_selected по рекомендации."""
+    _ensure_sheet_state(sheet)
     scans = scan_dataframe(df)
-    st.session_state.scans = scans
-    # Выставляем дефолты только для новых колонок, сохраняя предыдущий выбор пользователя
+    st.session_state.scans_by_sheet[sheet] = scans
     current_cols = {s.column for s in scans}
-    # Убираем состояние для колонок, которых уже нет
-    for stale in list(st.session_state.col_selected):
+    cs = st.session_state.col_selected_by_sheet[sheet]
+    to = st.session_state.col_type_overrides_by_sheet[sheet]
+    for stale in list(cs):
         if stale not in current_cols:
-            st.session_state.col_selected.pop(stale, None)
-    for stale in list(st.session_state.col_type_overrides):
+            cs.pop(stale, None)
+    for stale in list(to):
         if stale not in current_cols:
-            st.session_state.col_type_overrides.pop(stale, None)
+            to.pop(stale, None)
     for s in scans:
-        st.session_state.col_selected.setdefault(s.column, s.recommended)
-        st.session_state.col_type_overrides.setdefault(s.column, None)
+        cs.setdefault(s.column, s.recommended)
+        to.setdefault(s.column, None)
 
 
-def _get_scan(col: str):
-    for s in st.session_state.scans:
+def _get_scan(sheet: str, col: str):
+    for s in st.session_state.scans_by_sheet.get(sheet, []):
         if s.column == col:
             return s
     return None
 
 
-def _effective_type(col: str) -> str | None:
-    """Возвращает итоговый тип для колонки: override или автодетект."""
-    override = st.session_state.col_type_overrides.get(col)
+def _effective_type(sheet: str, col: str) -> str | None:
+    """Итоговый тип для колонки листа: override или автодетект."""
+    override = st.session_state.col_type_overrides_by_sheet.get(sheet, {}).get(col)
     if override:
         return override
-    s = _get_scan(col)
+    s = _get_scan(sheet, col)
     return s.detected_type if s else None
 
 
-def _selected_columns() -> list[str]:
-    """Возвращает список колонок с включенной галочкой, в порядке листа."""
-    return [s.column for s in st.session_state.scans if st.session_state.col_selected.get(s.column, False)]
+def _selected_columns(sheet: str) -> list[str]:
+    sel = st.session_state.col_selected_by_sheet.get(sheet, {})
+    return [s.column for s in st.session_state.scans_by_sheet.get(sheet, []) if sel.get(s.column, False)]
 
 
 def _run_for_column(df: pd.DataFrame, col: str, data_type: str) -> list[NormalizationCandidate]:
@@ -138,6 +152,16 @@ st.title("🧪 Enigma · Тестовый стенд нормализации")
 st.caption(
     "Проверка отдельных алгоритмов нормализации перед этапом анонимизации. "
     "Система сама распознаёт тип данных в каждой колонке и запускает нужный алгоритм."
+)
+
+# ---------------------------------------------------------------------------
+# Переключатель режима (в сайдбаре) — показывается сразу, ещё до
+# загрузки файла, чтобы пользователь видел доступные режимы.
+# ---------------------------------------------------------------------------
+mode = st.sidebar.radio(
+    "Режим",
+    options=["🧪 Нормализация", "🔍 Поиск аномалий"],
+    key="app_mode",
 )
 
 # ---------------------------------------------------------------------------
@@ -164,498 +188,599 @@ if not st.session_state.sheets_data:
     st.info("Загрузите Excel-файл, чтобы продолжить.")
     st.stop()
 
-
-# ---------------------------------------------------------------------------
-# Переключатель режима (в сайдбаре). Поиск аномалий вынесен в отдельный
-# режим, чтобы не тормозить основной пайплайн на больших файлах —
-# скан запускается явно по кнопке.
-# ---------------------------------------------------------------------------
-mode = st.sidebar.radio(
-    "Режим",
-    options=["🧪 Нормализация", "🔍 Поиск аномалий"],
-    key="app_mode",
-)
-
 if mode == "🔍 Поиск аномалий":
     st.subheader("Проверка данных на аномалии")
     st.caption(
-        "Сканирование листа на пустые строки, дубликаты, нетипичные значения в "
+        "Сканирование листов на пустые строки, дубликаты, нетипичные значения в "
         "числовых/текстовых колонках и т.п. Работает отдельно от нормализации, "
         "чтобы не замедлять основной воркфлоу."
     )
 
-    a_sheet = st.selectbox(
-        "Лист для проверки",
-        options=list(st.session_state.sheets_data.keys()),
-        key="anomaly_sheet",
+    all_sheets = list(st.session_state.sheets_data.keys())
+    a_sheets = st.multiselect(
+        "Листы для проверки (можно выбрать несколько)",
+        options=all_sheets,
+        default=all_sheets,
+        key="anomaly_sheets",
     )
-    a_df = st.session_state.sheets_data[a_sheet]
-    n_rows = len(a_df)
-    st.caption(f"Строк на листе: **{n_rows:,}**".replace(",", " "))
+    if not a_sheets:
+        st.info("Выберите хотя бы один лист.")
+        st.stop()
+
+    total_rows = sum(len(st.session_state.sheets_data[s]) for s in a_sheets)
+    st.caption(f"Выбрано листов: **{len(a_sheets)}** · строк всего: **{total_rows:,}**".replace(",", " "))
 
     col_a, col_b = st.columns([3, 2])
     with col_a:
         use_sample = st.checkbox(
             "Ограничить сэмплом (для больших файлов)",
-            value=n_rows > 50_000,
+            value=total_rows > 50_000,
             key="anomaly_use_sample",
         )
     with col_b:
         sample_size = st.number_input(
-            "Размер сэмпла", min_value=1_000, max_value=500_000,
+            "Размер сэмпла (на лист)", min_value=1_000, max_value=500_000,
             value=50_000, step=5_000, key="anomaly_sample_size",
             disabled=not use_sample,
         )
 
     run = st.button("Запустить поиск аномалий", type="primary", key="anomaly_run")
-    cache_key = f"anomaly_cache::{st.session_state.uploaded_name}::{a_sheet}"
 
     if run:
-        with st.spinner("Ищу аномалии…"):
-            st.session_state[cache_key] = scan_anomalies(
-                a_df,
-                sample_size=int(sample_size) if use_sample else None,
-            )
+        results: dict[str, list] = {}
+        progress = st.progress(0.0)
+        for i, sh in enumerate(a_sheets, start=1):
+            with st.spinner(f"[{i}/{len(a_sheets)}] Лист «{sh}»…"):
+                results[sh] = scan_anomalies(
+                    st.session_state.sheets_data[sh],
+                    sample_size=int(sample_size) if use_sample else None,
+                )
+            progress.progress(i / len(a_sheets))
+        progress.empty()
+        st.session_state[f"anomaly_results::{st.session_state.uploaded_name}"] = results
 
-    groups = st.session_state.get(cache_key)
-    if groups is None:
-        st.info("Нажмите «Запустить поиск аномалий», чтобы проверить этот лист.")
-    elif not groups:
-        st.success("Аномалий не найдено — файл выглядит чистым.")
-    else:
-        total = sum(g.count for g in groups)
-        sev_icon = {"high": "🔴", "medium": "🟡", "low": "⚪"}
-        m1, m2, m3, m4 = st.columns(4)
-        m1.metric("Всего находок", total)
-        m2.metric("🔴 Критичные", sum(g.count for g in groups if g.severity == "high"))
-        m3.metric("🟡 Средние", sum(g.count for g in groups if g.severity == "medium"))
-        m4.metric("⚪ Незначительные", sum(g.count for g in groups if g.severity == "low"))
+    all_results = st.session_state.get(f"anomaly_results::{st.session_state.uploaded_name}")
+    all_results = {s: all_results[s] for s in a_sheets if all_results and s in all_results} if all_results else None
 
-        report_rows: list[dict] = []
-        for g in sorted(groups, key=lambda x: {"high": 0, "medium": 1, "low": 2}[x.severity]):
-            with st.expander(
-                f"{sev_icon[g.severity]} {g.title} — {g.count}",
-                expanded=g.severity == "high",
-            ):
-                st.caption(g.description)
-                rows = [
-                    {
-                        "Строка (Excel)": e.row if e.row else "—",
-                        "Колонка": e.column or "—",
-                        "Значение": "" if e.value is None else str(e.value),
-                    }
-                    for e in g.examples
-                ]
-                if rows:
-                    st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
-                if g.count > len(g.examples):
-                    st.caption(f"… и ещё {g.count - len(g.examples)} (показаны первые {len(g.examples)})")
-                for e in g.examples:
-                    report_rows.append({
-                        "Тип": g.title,
-                        "Важность": g.severity,
-                        "Строка": e.row,
-                        "Колонка": e.column,
-                        "Значение": "" if e.value is None else str(e.value),
-                    })
+    if not all_results:
+        st.info("Нажмите «Запустить поиск аномалий», чтобы проверить выбранные листы.")
+        st.stop()
 
-        if report_rows:
-            csv = pd.DataFrame(report_rows).to_csv(index=False).encode("utf-8-sig")
-            st.download_button(
-                "⬇️ Скачать отчёт (CSV)",
-                data=csv,
-                file_name=f"anomalies_{a_sheet}.csv",
-                mime="text/csv",
-                key="anomaly_report_dl",
-            )
+    # Сводка по всем листам
+    sev_icon = {"high": "🔴", "medium": "🟡", "low": "⚪"}
+    total = sum(g.count for gs in all_results.values() for g in gs)
+    by_sev = {sev: sum(g.count for gs in all_results.values() for g in gs if g.severity == sev)
+              for sev in ("high", "medium", "low")}
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("Всего находок", total)
+    m2.metric("🔴 Критичные", by_sev["high"])
+    m3.metric("🟡 Средние", by_sev["medium"])
+    m4.metric("⚪ Незначительные", by_sev["low"])
+
+    report_rows: list[dict] = []
+    # Отдельная вкладка под каждый лист
+    tabs = st.tabs([f"{s} ({sum(g.count for g in all_results[s])})" for s in a_sheets])
+    for tab, sh in zip(tabs, a_sheets):
+        with tab:
+            groups = all_results[sh]
+            if not groups:
+                st.success("Аномалий не найдено — лист выглядит чистым.")
+                continue
+            for g in sorted(groups, key=lambda x: {"high": 0, "medium": 1, "low": 2}[x.severity]):
+                with st.expander(
+                    f"{sev_icon[g.severity]} {g.title} — {g.count}",
+                    expanded=g.severity == "high",
+                ):
+                    st.caption(g.description)
+                    rows = [
+                        {
+                            "Строка (Excel)": e.row if e.row else "—",
+                            "Колонка": e.column or "—",
+                            "Значение": "" if e.value is None else str(e.value),
+                        }
+                        for e in g.examples
+                    ]
+                    if rows:
+                        st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+                    if g.count > len(g.examples):
+                        st.caption(f"… и ещё {g.count - len(g.examples)} (показаны первые {len(g.examples)})")
+                    for e in g.examples:
+                        report_rows.append({
+                            "Лист": sh,
+                            "Тип": g.title,
+                            "Важность": g.severity,
+                            "Строка": e.row,
+                            "Колонка": e.column,
+                            "Значение": "" if e.value is None else str(e.value),
+                        })
+
+    if report_rows:
+        csv = pd.DataFrame(report_rows).to_csv(index=False).encode("utf-8-sig")
+        st.download_button(
+            "⬇️ Скачать отчёт (CSV, по всем листам)",
+            data=csv,
+            file_name="anomalies_report.csv",
+            mime="text/csv",
+            key="anomaly_report_dl",
+        )
 
     st.stop()
 
 
 # ---------------------------------------------------------------------------
-# Шаг 2. Выбор листа + автоматическое распознавание колонок
+# Режим: Нормализация (несколько листов)
 # ---------------------------------------------------------------------------
-st.header("2. Автоматическое распознавание колонок")
+# Шаг 2. Выбор листов + автоматическое распознавание колонок
+# ---------------------------------------------------------------------------
+st.header("2. Выбор листов и автоматическое распознавание колонок")
 
-sheet = st.selectbox(
-    "Лист",
-    options=list(st.session_state.sheets_data.keys()),
-    key="sheet_select",
+all_sheets = list(st.session_state.sheets_data.keys())
+selected_sheets = st.multiselect(
+    "Листы для нормализации (можно выбрать несколько — нормализация пройдёт по всем)",
+    options=all_sheets,
+    default=st.session_state.sheets or all_sheets[:1],
+    key="norm_sheets",
 )
-if sheet != st.session_state.sheet:
-    # Сменился лист — сбрасываем всё, что связано с колонками
-    st.session_state.sheet = sheet
-    st.session_state.scans = []
-    st.session_state.col_selected = {}
-    st.session_state.col_type_overrides = {}
-    st.session_state.results = {}
-    st.session_state.selections = {}
-    st.session_state.canonicals = {}
-    st.session_state.applied = False
-    st.session_state.normalized_df = None
-    st.session_state.mapping_payload = None
 
-df = st.session_state.sheets_data[sheet]
+# Синхронизируем выбор листов в состояние и чистим устаревшие записи.
+st.session_state.sheets = selected_sheets
+for container_key in (
+    "scans_by_sheet", "col_selected_by_sheet", "col_type_overrides_by_sheet",
+    "results_by_sheet", "selections_by_sheet", "canonicals_by_sheet",
+    "normalized_by_sheet",
+):
+    container = st.session_state.get(container_key) or {}
+    for stale in list(container):
+        if stale not in selected_sheets:
+            container.pop(stale, None)
+    st.session_state[container_key] = container
 
-# Сканирование листа (или пересканирование по кнопке)
-if not st.session_state.scans:
-    with st.spinner("Анализирую колонки листа…"):
-        _scan_sheet(df)
+if not selected_sheets:
+    st.info("Выберите хотя бы один лист выше, чтобы продолжить.")
+    st.stop()
 
-scans = st.session_state.scans
-recommended_cnt = sum(1 for s in scans if s.recommended)
+# Гарантируем, что для каждого выбранного листа есть свежий скан.
+for sh in selected_sheets:
+    _ensure_sheet_state(sh)
+    if not st.session_state.scans_by_sheet.get(sh):
+        with st.spinner(f"Анализирую колонки листа «{sh}»…"):
+            _scan_sheet(sh, st.session_state.sheets_data[sh])
 
-hint_col, rescan_col = st.columns([5, 1])
-with hint_col:
+# Кнопка пересканирования всех выбранных листов.
+rescan_col1, rescan_col2 = st.columns([5, 1])
+with rescan_col1:
     st.caption(
-        f"Найдено колонок всего: **{len(scans)}** · рекомендовано к нормализации: "
-        f"**{recommended_cnt}**. Галочки выставлены автоматически — можно снять лишние "
-        "или включить те, что система пропустила."
+        f"Выбрано листов: **{len(selected_sheets)}**. Галочки и типы выставлены автоматически "
+        "по результатам автодетекта — можно подправить в вкладке каждого листа ниже."
     )
-with rescan_col:
-    if st.button("↻ Пересканировать", help="Сбросить правки и выставить галочки по автодетекту"):
-        st.session_state.col_selected = {}
-        st.session_state.col_type_overrides = {}
-        _scan_sheet(df)
+with rescan_col2:
+    if st.button("↻ Пересканировать все", help="Сбросить правки и выставить галочки по автодетекту"):
+        for sh in selected_sheets:
+            st.session_state.col_selected_by_sheet[sh] = {}
+            st.session_state.col_type_overrides_by_sheet[sh] = {}
+            _scan_sheet(sh, st.session_state.sheets_data[sh])
         st.rerun()
 
-# Таблица сканирования с чекбоксами
-scan_rows = []
-for s in scans:
-    type_label = LABELS.get(s.detected_type, "—") if s.detected_type else "— не распознано"
-    if s.detected_type:
-        if s.confidence >= 0.75:
-            badge = "✔ высокая"
-        elif s.confidence >= 0.5:
-            badge = "~ средняя"
-        else:
-            badge = "? низкая"
-    else:
-        badge = "—"
-    scan_rows.append({
-        "Включить": st.session_state.col_selected.get(s.column, s.recommended),
-        "Колонка": s.column,
-        "Распознанный тип": type_label,
-        "Уверенность": f"{s.confidence:.0%}" if s.detected_type else "—",
-        "Оценка": badge,
-        "Непустых значений": s.non_empty,
-    })
-
-scan_df = pd.DataFrame(scan_rows)
-edited_scan = st.data_editor(
-    scan_df,
-    use_container_width=True,
-    hide_index=True,
-    disabled=["Колонка", "Распознанный тип", "Уверенность", "Оценка", "Непустых значений"],
-    column_config={
-        "Включить": st.column_config.CheckboxColumn("Включить", width="small"),
-        "Колонка": st.column_config.TextColumn("Колонка", width="medium"),
-        "Распознанный тип": st.column_config.TextColumn("Распознанный тип", width="medium"),
-        "Уверенность": st.column_config.TextColumn("Уверенность", width="small"),
-        "Оценка": st.column_config.TextColumn("Оценка", width="small"),
-        "Непустых значений": st.column_config.NumberColumn("Непустых", width="small"),
-    },
-    key="scan_editor",
-)
-# Синхронизируем изменения галочек обратно в session_state
-for _, row in edited_scan.iterrows():
-    st.session_state.col_selected[str(row["Колонка"])] = bool(row["Включить"])
-
-columns = _selected_columns()
-
-if not columns:
-    st.info("Отметьте галочкой хотя бы одну колонку выше.")
-    st.stop()
-
-# Превью выбранных колонок
-st.caption("Превью первых 10 строк по выбранным колонкам:")
-st.dataframe(df[columns].head(10), use_container_width=True, hide_index=True)
-
 
 # ---------------------------------------------------------------------------
-# Шаг 3. Корректировка типа алгоритма (если автодетект не уверен)
+# Шаг 3. По-листовая настройка: колонки + тип алгоритма (вкладки на лист)
 # ---------------------------------------------------------------------------
-st.header("3. Тип алгоритма для каждой колонки")
+st.header("3. Настройка по листам")
 st.caption(
-    "По умолчанию используется распознанный тип. Если автодетект ошибся или не уверен — "
-    "выберите тип вручную в выпадающем списке."
+    "Каждая вкладка — один лист. В ней можно включить/выключить колонки и при "
+    "необходимости переопределить тип алгоритма."
 )
 
 type_options_with_auto = ["(авто)"] + list(REGISTRY.keys())
+sheet_tabs = st.tabs([f"📋 {sh}" for sh in selected_sheets])
 
-for col in columns:
-    scan = _get_scan(col)
-    detected = scan.detected_type if scan else None
-    score = scan.confidence if scan else 0.0
-
-    label_left, label_mid, label_right = st.columns([2, 2, 3])
-    with label_left:
-        st.markdown(f"**Колонка:** `{col}`")
-    with label_mid:
-        if detected:
-            badge = "✅" if score >= 0.75 else ("🟡" if score >= 0.5 else "❓")
-            st.markdown(
-                f"{badge} Определено: **{LABELS[detected]}** "
-                f"<span style='color:#888'>({score:.0%})</span>",
-                unsafe_allow_html=True,
-            )
-        else:
-            st.markdown("❓ Тип не распознан — выберите вручную")
-
-    with label_right:
-        current_override = st.session_state.col_type_overrides.get(col)
-        default_index = 0
-        if current_override:
-            default_index = 1 + list(REGISTRY.keys()).index(current_override)
-
-        def _fmt(opt: str) -> str:
-            if opt == "(авто)":
-                if detected:
-                    return f"(авто: {LABELS[detected]})"
-                return "(не определено)"
-            return LABELS[opt]
-
-        choice = st.selectbox(
-            "Тип алгоритма",
-            options=type_options_with_auto,
-            index=default_index,
-            format_func=_fmt,
-            key=f"type_override_{col}",
-            label_visibility="collapsed",
+for tab, sh in zip(sheet_tabs, selected_sheets):
+    with tab:
+        df_sh = st.session_state.sheets_data[sh]
+        scans = st.session_state.scans_by_sheet.get(sh, [])
+        recommended_cnt = sum(1 for s in scans if s.recommended)
+        st.caption(
+            f"Найдено колонок: **{len(scans)}** · рекомендовано: **{recommended_cnt}** · "
+            f"строк в листе: **{len(df_sh):,}**".replace(",", " ")
         )
-        st.session_state.col_type_overrides[col] = None if choice == "(авто)" else choice
+
+        # Таблица сканирования с чекбоксами
+        scan_rows = []
+        for s in scans:
+            type_label = LABELS.get(s.detected_type, "—") if s.detected_type else "— не распознано"
+            if s.detected_type:
+                if s.confidence >= 0.75:
+                    badge = "✔ высокая"
+                elif s.confidence >= 0.5:
+                    badge = "~ средняя"
+                else:
+                    badge = "? низкая"
+            else:
+                badge = "—"
+            scan_rows.append({
+                "Включить": st.session_state.col_selected_by_sheet[sh].get(s.column, s.recommended),
+                "Колонка": s.column,
+                "Распознанный тип": type_label,
+                "Уверенность": f"{s.confidence:.0%}" if s.detected_type else "—",
+                "Оценка": badge,
+                "Непустых значений": s.non_empty,
+            })
+
+        if not scan_rows:
+            st.warning("В листе не обнаружено колонок.")
+            continue
+
+        scan_df = pd.DataFrame(scan_rows)
+        edited_scan = st.data_editor(
+            scan_df,
+            use_container_width=True,
+            hide_index=True,
+            disabled=["Колонка", "Распознанный тип", "Уверенность", "Оценка", "Непустых значений"],
+            column_config={
+                "Включить": st.column_config.CheckboxColumn("Включить", width="small"),
+                "Колонка": st.column_config.TextColumn("Колонка", width="medium"),
+                "Распознанный тип": st.column_config.TextColumn("Распознанный тип", width="medium"),
+                "Уверенность": st.column_config.TextColumn("Уверенность", width="small"),
+                "Оценка": st.column_config.TextColumn("Оценка", width="small"),
+                "Непустых значений": st.column_config.NumberColumn("Непустых", width="small"),
+            },
+            key=f"scan_editor::{sh}",
+        )
+        # Синхронизируем изменения галочек обратно в session_state
+        for _, row in edited_scan.iterrows():
+            st.session_state.col_selected_by_sheet[sh][str(row["Колонка"])] = bool(row["Включить"])
+
+        cols_sh = _selected_columns(sh)
+        if not cols_sh:
+            st.info("Отметьте хотя бы одну колонку выше.")
+            continue
+
+        st.caption("Превью первых 10 строк по выбранным колонкам:")
+        st.dataframe(df_sh[cols_sh].head(10), use_container_width=True, hide_index=True)
+
+        st.markdown("**Тип алгоритма для каждой колонки.** При необходимости переопределите автодетект.")
+        for col in cols_sh:
+            scan = _get_scan(sh, col)
+            detected = scan.detected_type if scan else None
+            score = scan.confidence if scan else 0.0
+
+            label_left, label_mid, label_right = st.columns([2, 2, 3])
+            with label_left:
+                st.markdown(f"**Колонка:** `{col}`")
+            with label_mid:
+                if detected:
+                    badge = "✅" if score >= 0.75 else ("🟡" if score >= 0.5 else "❓")
+                    st.markdown(
+                        f"{badge} Определено: **{LABELS[detected]}** "
+                        f"<span style='color:#888'>({score:.0%})</span>",
+                        unsafe_allow_html=True,
+                    )
+                else:
+                    st.markdown("❓ Тип не распознан — выберите вручную")
+
+            with label_right:
+                current_override = st.session_state.col_type_overrides_by_sheet[sh].get(col)
+                default_index = 0
+                if current_override:
+                    default_index = 1 + list(REGISTRY.keys()).index(current_override)
+
+                def _fmt(opt: str, _detected=detected) -> str:
+                    if opt == "(авто)":
+                        if _detected:
+                            return f"(авто: {LABELS[_detected]})"
+                        return "(не определено)"
+                    return LABELS[opt]
+
+                choice = st.selectbox(
+                    "Тип алгоритма",
+                    options=type_options_with_auto,
+                    index=default_index,
+                    format_func=_fmt,
+                    key=f"type_override::{sh}::{col}",
+                    label_visibility="collapsed",
+                )
+                st.session_state.col_type_overrides_by_sheet[sh][col] = None if choice == "(авто)" else choice
 
 
-# Проверяем, что у всех колонок есть тип
-missing_type_cols = [c for c in columns if not _effective_type(c)]
-if missing_type_cols:
+# Сводка по всем листам: что выбрано, где нет типа.
+per_sheet_cols: dict[str, list[str]] = {sh: _selected_columns(sh) for sh in selected_sheets}
+total_cols = sum(len(v) for v in per_sheet_cols.values())
+missing: list[tuple[str, str]] = []
+for sh, cols_sh in per_sheet_cols.items():
+    for c in cols_sh:
+        if not _effective_type(sh, c):
+            missing.append((sh, c))
+
+if total_cols == 0:
+    st.info("Не выбрано ни одной колонки ни на одном листе.")
+    st.stop()
+
+if missing:
     st.warning(
         "Не определён тип для колонок: "
-        + ", ".join(f"`{c}`" for c in missing_type_cols)
-        + ". Выберите вручную в списке справа — без этого запуск невозможен."
+        + ", ".join(f"`{sh} → {c}`" for sh, c in missing)
+        + ". Переопределите тип вручную — без этого запуск невозможен."
     )
 
 
 # ---------------------------------------------------------------------------
-# Шаг 4. Запуск алгоритмов
+# Шаг 4. Запуск алгоритмов по всем выбранным листам
 # ---------------------------------------------------------------------------
 st.header("4. Запуск алгоритмов")
 
-run_disabled = bool(missing_type_cols)
+run_disabled = bool(missing)
 run_clicked = st.button(
-    f"▶ Запустить нормализацию для {len(columns)} колонок",
+    f"▶ Запустить нормализацию для {total_cols} колонок на {len(selected_sheets)} листах",
     type="primary",
     disabled=run_disabled,
 )
 
 if run_clicked:
-    st.session_state.results = {}
-    st.session_state.selections = {}
-    st.session_state.canonicals = {}
+    # Полный сброс старых результатов по всем выбранным листам.
+    for sh in selected_sheets:
+        st.session_state.results_by_sheet[sh] = {}
+        st.session_state.selections_by_sheet[sh] = {}
+        st.session_state.canonicals_by_sheet[sh] = {}
+    st.session_state.normalized_by_sheet = {}
+    st.session_state.mapping_payload = None
     st.session_state.applied = False
 
+    total_tasks = total_cols
+    done = 0
     progress = st.progress(0.0)
-    for i, col in enumerate(columns, start=1):
-        data_type = _effective_type(col)
-        with st.spinner(f"[{i}/{len(columns)}] Алгоритм «{LABELS[data_type]}» для колонки «{col}»…"):
-            cands = _run_for_column(df, col, data_type)
-        st.session_state.results[col] = cands
-        st.session_state.selections[col] = {j: (len(c.variants) > 1) for j, c in enumerate(cands)}
-        st.session_state.canonicals[col] = {j: c.canonical for j, c in enumerate(cands)}
-        progress.progress(i / len(columns))
+    for sh in selected_sheets:
+        df_sh = st.session_state.sheets_data[sh]
+        for col in per_sheet_cols[sh]:
+            data_type = _effective_type(sh, col)
+            with st.spinner(
+                f"[{done + 1}/{total_tasks}] «{sh}» · «{col}» · алгоритм «{LABELS[data_type]}»…"
+            ):
+                cands = _run_for_column(df_sh, col, data_type)
+            st.session_state.results_by_sheet[sh][col] = cands
+            st.session_state.selections_by_sheet[sh][col] = {
+                j: (len(c.variants) > 1) for j, c in enumerate(cands)
+            }
+            st.session_state.canonicals_by_sheet[sh][col] = {
+                j: c.canonical for j, c in enumerate(cands)
+            }
+            done += 1
+            progress.progress(done / max(total_tasks, 1))
     progress.empty()
-    st.success(f"Обработано колонок: {len(columns)}.")
+    st.success(f"Обработано колонок: {done} на {len(selected_sheets)} листах.")
 
 
 # ---------------------------------------------------------------------------
-# Шаг 5. Кандидаты по каждой колонке (таб для каждой)
+# Шаг 5. Кандидаты по каждой колонке каждого листа (вкладки)
 # ---------------------------------------------------------------------------
-if st.session_state.results:
+has_any_results = any(st.session_state.results_by_sheet.get(sh) for sh in selected_sheets)
+
+if has_any_results:
     st.header("5. Кандидаты на объединение")
     st.caption(
-        "Для каждой колонки показан отдельный список кандидатов. "
-        "Отметьте галочками группы, которые нужно действительно объединить. "
-        "Каноническое значение можно отредактировать."
+        "Вкладки разбиты по листам. Внутри каждой — по одной вкладке на колонку. "
+        "Отметьте группы, которые действительно нужно объединить."
     )
 
-    processed_cols = [c for c in columns if c in st.session_state.results]
-    tab_labels = [
-        f"{c} · {LABELS[_effective_type(c)]}"
-        for c in processed_cols
-    ]
-    tabs = st.tabs(tab_labels)
+    # Оставляем только листы, где есть результаты.
+    sheets_with_res = [sh for sh in selected_sheets if st.session_state.results_by_sheet.get(sh)]
+    res_sheet_tabs = st.tabs([f"📋 {sh}" for sh in sheets_with_res])
 
-    for tab, col in zip(tabs, processed_cols):
-        with tab:
-            candidates: list[NormalizationCandidate] = st.session_state.results[col]
-            if not candidates:
-                st.warning("Алгоритм не нашёл ни одного кандидата — колонка пуста или значения некорректны.")
+    for res_tab, sh in zip(res_sheet_tabs, sheets_with_res):
+        with res_tab:
+            results = st.session_state.results_by_sheet.get(sh, {})
+            processed_cols = [c for c in per_sheet_cols.get(sh, []) if c in results]
+            if not processed_cols:
+                st.info("Для этого листа нет обработанных колонок.")
                 continue
 
-            multi = sum(1 for c in candidates if len(c.variants) > 1)
-            st.caption(
-                f"Всего групп: **{len(candidates)}** · с несколькими вариантами: **{multi}**."
-            )
+            col_tab_labels = [
+                f"{c} · {LABELS[_effective_type(sh, c)]}" for c in processed_cols
+            ]
+            col_tabs = st.tabs(col_tab_labels)
 
-            filter_mode = st.radio(
-                "Показывать:",
-                options=["Только группы с вариантами", "Все группы"],
-                horizontal=True,
-                index=0,
-                key=f"filter_{col}",
-            )
+            for col_tab, col in zip(col_tabs, processed_cols):
+                with col_tab:
+                    candidates: list[NormalizationCandidate] = results[col]
+                    if not candidates:
+                        st.warning(
+                            "Алгоритм не нашёл ни одного кандидата — колонка пуста или "
+                            "значения некорректны."
+                        )
+                        continue
 
-            bulk_a, bulk_b, _ = st.columns([1, 1, 4])
-            with bulk_a:
-                if st.button("✓ Отметить все", key=f"check_all_{col}"):
-                    for i in range(len(candidates)):
-                        st.session_state.selections[col][i] = True
-                    st.rerun()
-            with bulk_b:
-                if st.button("✗ Снять все", key=f"uncheck_all_{col}"):
-                    for i in range(len(candidates)):
-                        st.session_state.selections[col][i] = False
-                    st.rerun()
+                    multi = sum(1 for c in candidates if len(c.variants) > 1)
+                    st.caption(
+                        f"Всего групп: **{len(candidates)}** · с несколькими вариантами: **{multi}**."
+                    )
 
-            rows = []
-            for i, c in enumerate(candidates):
-                if filter_mode == "Только группы с вариантами" and len(c.variants) <= 1:
-                    continue
-                rows.append({
-                    "id": i,
-                    "Применить": st.session_state.selections[col].get(i, False),
-                    "Каноническое значение": st.session_state.canonicals[col].get(i, c.canonical),
-                    "Варианты (исходные)": " | ".join(c.variants),
-                    "Вариантов": len(c.variants),
-                    "Встречается": c.count,
-                    "Уверенность": round(c.confidence, 2),
-                })
+                    filter_mode = st.radio(
+                        "Показывать:",
+                        options=["Только группы с вариантами", "Все группы"],
+                        horizontal=True,
+                        index=0,
+                        key=f"filter::{sh}::{col}",
+                    )
 
-            if not rows:
-                st.info("В этом режиме нет групп для отображения. Переключитесь на «Все группы».")
-                continue
+                    bulk_a, bulk_b, _ = st.columns([1, 1, 4])
+                    with bulk_a:
+                        if st.button("✓ Отметить все", key=f"check_all::{sh}::{col}"):
+                            for i in range(len(candidates)):
+                                st.session_state.selections_by_sheet[sh][col][i] = True
+                            st.rerun()
+                    with bulk_b:
+                        if st.button("✗ Снять все", key=f"uncheck_all::{sh}::{col}"):
+                            for i in range(len(candidates)):
+                                st.session_state.selections_by_sheet[sh][col][i] = False
+                            st.rerun()
 
-            editor_df = pd.DataFrame(rows)
-            edited = st.data_editor(
-                editor_df,
-                use_container_width=True,
-                hide_index=True,
-                disabled=["id", "Варианты (исходные)", "Вариантов", "Встречается", "Уверенность"],
-                column_config={
-                    "id": st.column_config.NumberColumn("ID", width="small"),
-                    "Применить": st.column_config.CheckboxColumn("Применить", width="small"),
-                    "Каноническое значение": st.column_config.TextColumn(
-                        "Каноническое значение", width="medium"
-                    ),
-                    "Варианты (исходные)": st.column_config.TextColumn(
-                        "Варианты (исходные)", width="large"
-                    ),
-                },
-                key=f"editor_{col}",
-            )
-            for _, row in edited.iterrows():
-                idx = int(row["id"])
-                st.session_state.selections[col][idx] = bool(row["Применить"])
-                st.session_state.canonicals[col][idx] = str(row["Каноническое значение"])
+                    rows = []
+                    for i, c in enumerate(candidates):
+                        if filter_mode == "Только группы с вариантами" and len(c.variants) <= 1:
+                            continue
+                        rows.append({
+                            "id": i,
+                            "Применить": st.session_state.selections_by_sheet[sh][col].get(i, False),
+                            "Каноническое значение": st.session_state.canonicals_by_sheet[sh][col].get(i, c.canonical),
+                            "Варианты (исходные)": " | ".join(c.variants),
+                            "Вариантов": len(c.variants),
+                            "Встречается": c.count,
+                            "Уверенность": round(c.confidence, 2),
+                        })
+
+                    if not rows:
+                        st.info("В этом режиме нет групп для отображения. Переключитесь на «Все группы».")
+                        continue
+
+                    editor_df = pd.DataFrame(rows)
+                    edited = st.data_editor(
+                        editor_df,
+                        use_container_width=True,
+                        hide_index=True,
+                        disabled=["id", "Варианты (исходные)", "Вариантов", "Встречается", "Уверенность"],
+                        column_config={
+                            "id": st.column_config.NumberColumn("ID", width="small"),
+                            "Применить": st.column_config.CheckboxColumn("Применить", width="small"),
+                            "Каноническое значение": st.column_config.TextColumn(
+                                "Каноническое значение", width="medium"
+                            ),
+                            "Варианты (исходные)": st.column_config.TextColumn(
+                                "Варианты (исходные)", width="large"
+                            ),
+                        },
+                        key=f"editor::{sh}::{col}",
+                    )
+                    for _, row in edited.iterrows():
+                        idx = int(row["id"])
+                        st.session_state.selections_by_sheet[sh][col][idx] = bool(row["Применить"])
+                        st.session_state.canonicals_by_sheet[sh][col][idx] = str(row["Каноническое значение"])
 
 
 # ---------------------------------------------------------------------------
-# Шаг 6. Применение + экспорт
+# Шаг 6. Применение и экспорт (по всем выбранным листам сразу)
 # ---------------------------------------------------------------------------
-if st.session_state.results:
+if has_any_results:
     st.header("6. Применение и экспорт")
 
-    apply_clicked = st.button("🛠 Выполнить нормализацию по всем колонкам", type="primary")
+    apply_clicked = st.button(
+        "🛠 Выполнить нормализацию по всем выбранным листам",
+        type="primary",
+    )
 
     if apply_clicked:
-        normalized_df = df.copy()
-        per_column_payload: dict[str, dict] = {}
-        total_changed = 0
+        sheets_payload: dict[str, dict] = {}
+        grand_total_changed = 0
 
-        for col, candidates in st.session_state.results.items():
-            selections = st.session_state.selections.get(col, {})
-            canonicals = st.session_state.canonicals.get(col, {})
+        for sh in selected_sheets:
+            results = st.session_state.results_by_sheet.get(sh, {})
+            if not results:
+                continue
+            df_sh = st.session_state.sheets_data[sh]
+            normalized_df = df_sh.copy()
+            per_column_payload: dict[str, dict] = {}
+            sheet_changed = 0
 
-            mapping: dict[str, str] = {}
-            applied_groups = []
-            for i, c in enumerate(candidates):
-                if not selections.get(i, False):
-                    continue
-                canonical = (canonicals.get(i, c.canonical) or "").strip()
-                if not canonical:
-                    continue
-                for v in c.variants:
-                    mapping[v] = canonical
-                applied_groups.append({
-                    "canonical": canonical,
-                    "variants": c.variants,
-                    "count": c.count,
-                    "confidence": round(c.confidence, 3),
-                    "meta": c.meta,
-                })
+            for col, candidates in results.items():
+                selections = st.session_state.selections_by_sheet.get(sh, {}).get(col, {})
+                canonicals = st.session_state.canonicals_by_sheet.get(sh, {}).get(col, {})
 
-            col_series = normalized_df[col].astype(object)
-            new_series = col_series.map(
-                lambda x: mapping.get(str(x), x) if pd.notna(x) else x
-            )
-            changed = int((col_series.astype(str) != new_series.astype(str)).sum())
-            total_changed += changed
-            normalized_df[col] = new_series
+                mapping: dict[str, str] = {}
+                applied_groups = []
+                for i, c in enumerate(candidates):
+                    if not selections.get(i, False):
+                        continue
+                    canonical = (canonicals.get(i, c.canonical) or "").strip()
+                    if not canonical:
+                        continue
+                    for v in c.variants:
+                        mapping[v] = canonical
+                    applied_groups.append({
+                        "canonical": canonical,
+                        "variants": c.variants,
+                        "count": c.count,
+                        "confidence": round(c.confidence, 3),
+                        "meta": c.meta,
+                    })
 
-            scan = _get_scan(col)
-            per_column_payload[col] = {
-                "data_type": _effective_type(col),
-                "data_type_label": LABELS[_effective_type(col)],
-                "auto_detected": scan.detected_type if scan else None,
-                "auto_detected_scores": scan.scores if scan else {},
-                "auto_recommended": scan.recommended if scan else False,
-                "total_candidates": len(candidates),
-                "applied_groups": len(applied_groups),
-                "values_changed": changed,
-                "mapping": mapping,
-                "groups": applied_groups,
+                col_series = normalized_df[col].astype(object)
+                new_series = col_series.map(
+                    lambda x: mapping.get(str(x), x) if pd.notna(x) else x
+                )
+                changed = int((col_series.astype(str) != new_series.astype(str)).sum())
+                sheet_changed += changed
+                normalized_df[col] = new_series
+
+                scan = _get_scan(sh, col)
+                per_column_payload[col] = {
+                    "data_type": _effective_type(sh, col),
+                    "data_type_label": LABELS[_effective_type(sh, col)],
+                    "auto_detected": scan.detected_type if scan else None,
+                    "auto_detected_scores": scan.scores if scan else {},
+                    "auto_recommended": scan.recommended if scan else False,
+                    "total_candidates": len(candidates),
+                    "applied_groups": len(applied_groups),
+                    "values_changed": changed,
+                    "mapping": mapping,
+                    "groups": applied_groups,
+                }
+
+            st.session_state.normalized_by_sheet[sh] = normalized_df
+            grand_total_changed += sheet_changed
+            sheets_payload[sh] = {
+                "columns": list(results.keys()),
+                "values_changed": sheet_changed,
+                "per_column": per_column_payload,
             }
 
-        st.session_state.normalized_df = normalized_df
         st.session_state.mapping_payload = {
             "meta": {
                 "source_file": st.session_state.uploaded_name,
-                "sheet": st.session_state.sheet,
-                "columns": list(st.session_state.results.keys()),
+                "sheets": list(sheets_payload.keys()),
                 "created_at": datetime.now().isoformat(timespec="seconds"),
-                "total_values_changed": total_changed,
+                "total_values_changed": grand_total_changed,
             },
-            "columns": per_column_payload,
+            "sheets": sheets_payload,
         }
         st.session_state.applied = True
 
-    if st.session_state.applied and st.session_state.normalized_df is not None:
+    if st.session_state.applied and st.session_state.normalized_by_sheet:
         payload = st.session_state.mapping_payload
+        total_cols_applied = sum(len(p["columns"]) for p in payload["sheets"].values())
         st.success(
             f"Нормализация выполнена. Заменено значений всего: "
             f"**{payload['meta']['total_values_changed']}** "
-            f"по **{len(payload['columns'])}** колонкам."
+            f"по **{total_cols_applied}** колонкам на **{len(payload['sheets'])}** листах."
         )
 
-        st.subheader("Сравнение «до/после» (первые 15 строк по выбранным колонкам)")
-        before = df[list(payload["columns"].keys())].head(15).reset_index(drop=True)
-        after = st.session_state.normalized_df[list(payload["columns"].keys())].head(15).reset_index(drop=True)
-        before.columns = [f"{c} (до)" for c in before.columns]
-        after.columns = [f"{c} (после)" for c in after.columns]
-        # Перемежаем пары колонок
-        ordered_cols: list[str] = []
-        for c in payload["columns"].keys():
-            ordered_cols.append(f"{c} (до)")
-            ordered_cols.append(f"{c} (после)")
-        combined = pd.concat([before, after], axis=1)[ordered_cols]
-        st.dataframe(combined, use_container_width=True, hide_index=True)
+        # Сравнение «до/после» — отдельная вкладка под каждый лист.
+        st.subheader("Сравнение «до/после» (первые 15 строк)")
+        comp_tabs = st.tabs([f"📋 {sh}" for sh in payload["sheets"].keys()])
+        for comp_tab, sh in zip(comp_tabs, payload["sheets"].keys()):
+            with comp_tab:
+                cols_list = payload["sheets"][sh]["columns"]
+                if not cols_list:
+                    st.info("Для этого листа не применялось ни одной колонки.")
+                    continue
+                df_sh = st.session_state.sheets_data[sh]
+                norm_df = st.session_state.normalized_by_sheet[sh]
+                before = df_sh[cols_list].head(15).reset_index(drop=True)
+                after = norm_df[cols_list].head(15).reset_index(drop=True)
+                before.columns = [f"{c} (до)" for c in before.columns]
+                after.columns = [f"{c} (после)" for c in after.columns]
+                ordered_cols = []
+                for c in cols_list:
+                    ordered_cols.append(f"{c} (до)")
+                    ordered_cols.append(f"{c} (после)")
+                combined = pd.concat([before, after], axis=1)[ordered_cols]
+                st.dataframe(combined, use_container_width=True, hide_index=True)
 
-        # Скачивание Excel (все листы + обновлённый целевой лист)
+        # Скачивание Excel (все листы источника; выбранные — нормализованные).
         xlsx_buffer = io.BytesIO()
         with pd.ExcelWriter(xlsx_buffer, engine="xlsxwriter") as writer:
             for name, sdf in st.session_state.sheets_data.items():
-                if name == st.session_state.sheet:
-                    st.session_state.normalized_df.to_excel(writer, sheet_name=name, index=False)
+                if name in st.session_state.normalized_by_sheet:
+                    st.session_state.normalized_by_sheet[name].to_excel(
+                        writer, sheet_name=name, index=False
+                    )
                 else:
                     sdf.to_excel(writer, sheet_name=name, index=False)
 
@@ -695,9 +820,10 @@ with st.sidebar:
 
 **Как это работает:**
 1. Загружаете Excel.
-2. Выбираете лист. Система **сама находит колонки** для нормализации и определяет тип по содержимому.
+2. Выбираете один или несколько листов. Система **сама находит колонки** для
+   нормализации и определяет тип по содержимому.
 3. При необходимости корректируете галочки или тип алгоритма вручную.
-4. Запускаете — каждая колонка обрабатывается своим алгоритмом.
+4. Запускаете — алгоритмы отрабатывают по всем выбранным листам сразу.
 5. Подтверждаете кандидатов галочками.
 6. Скачиваете Excel и JSON-справочник.
 
@@ -708,6 +834,8 @@ with st.sidebar:
 - **Телефоны** — `phonenumbers`, E.164, поддержка добавочных.
 - **Организации** — извлечение ОПФ + fuzzy по имени без ОПФ.
 - **Email** — алиасы доменов, правила Gmail/Яндекс/Outlook.
+- **Текстовые значения** — универсальный нормализатор произвольных
+  текстовых колонок (склады, номенклатурные группы и пр.).
 
 **Автодетект.** Порог уверенности 60%. Если ни один тип не прошёл порог,
 система берёт лучший (от 40%) или предлагает выбрать вручную.
