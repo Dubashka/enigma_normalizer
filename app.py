@@ -25,6 +25,7 @@ import streamlit as st
 
 from normalizers import LABELS, REGISTRY, get_normalizer
 from normalizers.base import NormalizationCandidate
+from utils.anomalies import scan_anomalies
 from utils.detect import scan_dataframe
 
 
@@ -161,6 +162,113 @@ if uploaded is not None:
 
 if not st.session_state.sheets_data:
     st.info("Загрузите Excel-файл, чтобы продолжить.")
+    st.stop()
+
+
+# ---------------------------------------------------------------------------
+# Переключатель режима (в сайдбаре). Поиск аномалий вынесен в отдельный
+# режим, чтобы не тормозить основной пайплайн на больших файлах —
+# скан запускается явно по кнопке.
+# ---------------------------------------------------------------------------
+mode = st.sidebar.radio(
+    "Режим",
+    options=["🧪 Нормализация", "🔍 Поиск аномалий"],
+    key="app_mode",
+)
+
+if mode == "🔍 Поиск аномалий":
+    st.subheader("Проверка данных на аномалии")
+    st.caption(
+        "Сканирование листа на пустые строки, дубликаты, нетипичные значения в "
+        "числовых/текстовых колонках и т.п. Работает отдельно от нормализации, "
+        "чтобы не замедлять основной воркфлоу."
+    )
+
+    a_sheet = st.selectbox(
+        "Лист для проверки",
+        options=list(st.session_state.sheets_data.keys()),
+        key="anomaly_sheet",
+    )
+    a_df = st.session_state.sheets_data[a_sheet]
+    n_rows = len(a_df)
+    st.caption(f"Строк на листе: **{n_rows:,}**".replace(",", " "))
+
+    col_a, col_b = st.columns([3, 2])
+    with col_a:
+        use_sample = st.checkbox(
+            "Ограничить сэмплом (для больших файлов)",
+            value=n_rows > 50_000,
+            key="anomaly_use_sample",
+        )
+    with col_b:
+        sample_size = st.number_input(
+            "Размер сэмпла", min_value=1_000, max_value=500_000,
+            value=50_000, step=5_000, key="anomaly_sample_size",
+            disabled=not use_sample,
+        )
+
+    run = st.button("Запустить поиск аномалий", type="primary", key="anomaly_run")
+    cache_key = f"anomaly_cache::{st.session_state.uploaded_name}::{a_sheet}"
+
+    if run:
+        with st.spinner("Ищу аномалии…"):
+            st.session_state[cache_key] = scan_anomalies(
+                a_df,
+                sample_size=int(sample_size) if use_sample else None,
+            )
+
+    groups = st.session_state.get(cache_key)
+    if groups is None:
+        st.info("Нажмите «Запустить поиск аномалий», чтобы проверить этот лист.")
+    elif not groups:
+        st.success("Аномалий не найдено — файл выглядит чистым.")
+    else:
+        total = sum(g.count for g in groups)
+        sev_icon = {"high": "🔴", "medium": "🟡", "low": "⚪"}
+        m1, m2, m3, m4 = st.columns(4)
+        m1.metric("Всего находок", total)
+        m2.metric("🔴 Критичные", sum(g.count for g in groups if g.severity == "high"))
+        m3.metric("🟡 Средние", sum(g.count for g in groups if g.severity == "medium"))
+        m4.metric("⚪ Незначительные", sum(g.count for g in groups if g.severity == "low"))
+
+        report_rows: list[dict] = []
+        for g in sorted(groups, key=lambda x: {"high": 0, "medium": 1, "low": 2}[x.severity]):
+            with st.expander(
+                f"{sev_icon[g.severity]} {g.title} — {g.count}",
+                expanded=g.severity == "high",
+            ):
+                st.caption(g.description)
+                rows = [
+                    {
+                        "Строка (Excel)": e.row if e.row else "—",
+                        "Колонка": e.column or "—",
+                        "Значение": "" if e.value is None else str(e.value),
+                    }
+                    for e in g.examples
+                ]
+                if rows:
+                    st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+                if g.count > len(g.examples):
+                    st.caption(f"… и ещё {g.count - len(g.examples)} (показаны первые {len(g.examples)})")
+                for e in g.examples:
+                    report_rows.append({
+                        "Тип": g.title,
+                        "Важность": g.severity,
+                        "Строка": e.row,
+                        "Колонка": e.column,
+                        "Значение": "" if e.value is None else str(e.value),
+                    })
+
+        if report_rows:
+            csv = pd.DataFrame(report_rows).to_csv(index=False).encode("utf-8-sig")
+            st.download_button(
+                "⬇️ Скачать отчёт (CSV)",
+                data=csv,
+                file_name=f"anomalies_{a_sheet}.csv",
+                mime="text/csv",
+                key="anomaly_report_dl",
+            )
+
     st.stop()
 
 
