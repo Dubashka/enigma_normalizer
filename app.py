@@ -27,6 +27,16 @@ from normalizers import LABELS, REGISTRY, get_normalizer
 from normalizers.base import NormalizationCandidate
 from utils.anomalies import scan_anomalies
 from utils.detect import scan_dataframe
+from utils.text_extract import (
+    SUPPORTED_EXTENSIONS as TEXT_DOC_EXTS,
+    extract_document,
+    rebuild_document,
+)
+from utils.text_scan import (
+    apply_replacements as apply_text_replacements,
+    group_by_type,
+    scan_text_document,
+)
 
 
 st.set_page_config(
@@ -160,9 +170,19 @@ st.caption(
 # ---------------------------------------------------------------------------
 mode = st.sidebar.radio(
     "Режим",
-    options=["🧪 Нормализация", "🔍 Поиск аномалий"],
+    options=[
+        "🧪 Нормализация",
+        "🔍 Поиск аномалий",
+        "📄 Нормализация документов",
+    ],
     key="app_mode",
 )
+
+if mode == "📄 Нормализация документов":
+    # Полный отдельный воркфлоу — см. модуль ниже.
+    from text_doc_workflow import run_text_document_mode
+    run_text_document_mode()
+    st.stop()
 
 # ---------------------------------------------------------------------------
 # Шаг 1. Загрузка файла
