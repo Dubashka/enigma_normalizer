@@ -145,21 +145,36 @@ class AddressNormalizer(BaseNormalizer):
         s = _MULTISPACE_RE.sub(" ", s).strip(" ,")
         return s
 
+    def _compare_key_cached(self, value: str, _cache: dict = {}) -> str:
+        # Кэш внутри экземпляра не нужен — key_cache в cluster_by_similarity
+        # уже захватывает повторы. Метод оставлен для совместимости.
+        return self._compare_key(value)
+
     def build_candidates(self, values: list[str]) -> list[NormalizationCandidate]:
-        cleaned = [self._clean(v) for v in values if self._clean(v)]
-        if not cleaned:
+        uniq, counts = self._dedupe_with_counts(values)
+        if not uniq:
             return []
 
+        # Пред-нормализуем каждое уникальное значение один раз и кэшируем
+        # ключ сравнения — это самый дорогой шаг.
+        norm_cache: dict[str, str] = {}
+        key_cache: dict[str, str] = {}
+        for v in uniq:
+            norm = self.normalize_value(v)
+            norm_cache[v] = norm
+            key_cache[v] = self._key_from_normalized(norm)
+
         clusters = cluster_by_similarity(
-            cleaned,
-            key_fn=self._compare_key,
+            uniq,
+            key_fn=lambda v: key_cache.get(v, ""),
             threshold=self.threshold,
+            counts=counts,
         )
 
         candidates: list[NormalizationCandidate] = []
         for cl in clusters:
             variants = list(cl["variants"].keys())
-            canonical = self.normalize_value(cl["canonical"])
+            canonical = norm_cache.get(cl["canonical"]) or self.normalize_value(cl["canonical"])
             confidence = 1.0 if len(variants) == 1 else 0.85
 
             candidates.append(
@@ -174,3 +189,15 @@ class AddressNormalizer(BaseNormalizer):
 
         candidates.sort(key=lambda c: (-len(c.variants), -c.count))
         return candidates
+
+    def _key_from_normalized(self, normalized: str) -> str:
+        """Ключ сравнения из уже нормализованного текста — без повторного
+        вызова normalize_value (экономия больших regex)."""
+        s = re.sub(
+            r"\b(город|улица|дом|квартира|проспект|переулок|площадь|бульвар|"
+            r"шоссе|набережная|микрорайон|район|область|республика|строение|"
+            r"корпус|офис|литера|село|посёлок|пгт)\b",
+            "",
+            normalized.lower(),
+        )
+        return _MULTISPACE_RE.sub(" ", s).strip(" ,")

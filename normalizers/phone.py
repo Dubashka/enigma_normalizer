@@ -76,16 +76,18 @@ class PhoneNormalizer(BaseNormalizer):
         return phonenumbers.is_valid_number(parsed)
 
     def build_candidates(self, values: list[str]) -> list[NormalizationCandidate]:
-        cleaned = [self._clean(v) for v in values if self._clean(v)]
+        uniq, counts = self._dedupe_with_counts(values)
         groups: dict[str, dict] = {}
 
-        for v in cleaned:
+        # Нормализуем каждое уникальное значение один раз, учитывая частоту.
+        for v in uniq:
             canonical = self.normalize_value(v)
             if not canonical:
                 continue
+            freq = counts.get(v, 1)
             g = groups.setdefault(canonical, {"variants": Counter(), "count": 0})
-            g["variants"][v] += 1
-            g["count"] += 1
+            g["variants"][v] += freq
+            g["count"] += freq
 
         candidates: list[NormalizationCandidate] = []
         for canonical, data in groups.items():

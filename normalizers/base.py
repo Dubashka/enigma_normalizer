@@ -56,3 +56,24 @@ class BaseNormalizer(ABC):
         while "  " in s:
             s = s.replace("  ", " ")
         return s
+
+    @staticmethod
+    def _dedupe_with_counts(values: list) -> tuple[list[str], dict[str, int]]:
+        """Дедупликация: считаем частоту случаев каждого значения.
+
+        Нормализаторам достаточно прогнать каждое уникальное значение одинраз —
+        частоты потом учтываются при подсчёте. Это самая крупная экономия
+        на больших файлах с повторами (контрагенты, адреса и т.п.).
+        """
+        from collections import Counter
+        counter: Counter[str] = Counter()
+        for v in values:
+            if v is None:
+                continue
+            s = str(v).strip()
+            if not s or s.lower() in ("nan", "none", "null", "-"):
+                continue
+            counter[s] += 1
+        # Сортировка по убыванию частоты — это важно для алгоритма кластеризации.
+        uniq = sorted(counter, key=lambda k: (-counter[k], -len(k)))
+        return uniq, dict(counter)

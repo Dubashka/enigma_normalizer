@@ -7,9 +7,9 @@
 from __future__ import annotations
 
 from collections import Counter
-from typing import Callable
+from typing import Callable, Mapping
 
-from rapidfuzz import fuzz
+from rapidfuzz import fuzz, process
 
 
 def cluster_by_similarity(
@@ -17,19 +17,21 @@ def cluster_by_similarity(
     key_fn: Callable[[str], str],
     threshold: int = 88,
     scorer=fuzz.token_set_ratio,
+    counts: Mapping[str, int] | None = None,
 ) -> list[dict]:
     """Сгруппировать значения в кластеры по схожести их нормализованных ключей.
 
-    Алгоритм: жадная кластеризация.
-    1. Значения сортируются по убыванию частоты (самый частый — лидер кластера).
-    2. Для каждого нового значения ищется ближайший существующий кластер.
-    3. Если расстояние >= threshold — добавляем, иначе создаём новый кластер.
+    Алгоритм — жадная кластеризация с быстрым отбором через `rapidfuzz.process`.
 
     Args:
-        values: исходные значения колонки (с дубликатами).
-        key_fn: функция приведения к ключу сравнения.
+        values: исходные значения. Если `counts` не передан — допускаются
+            дубликаты, они будут посчитаны. Если `counts` передан, `values`
+            должны уже быть уникальными и отсортированными по убыванию частоты.
+        key_fn: функция приведения к ключу сравнения. Результат кэшируется.
         threshold: порог схожести 0..100.
         scorer: функция сравнения из rapidfuzz.
+        counts: опциональный словарь {value: count}. Если передан, ускоряет
+            работу (не нужно считать Counter).
 
     Returns:
         Список кластеров: [{canonical, keys, variants(Counter), count}, ...].
@@ -37,24 +39,38 @@ def cluster_by_similarity(
     if not values:
         return []
 
-    counter: Counter[str] = Counter(v for v in values if v)
-    # Сортируем по частоте, а при равной частоте — по длине (более полные впереди)
-    ordered = sorted(counter.items(), key=lambda x: (-x[1], -len(x[0])))
+    if counts is None:
+        counter: Counter[str] = Counter(v for v in values if v)
+        ordered = sorted(counter.items(), key=lambda x: (-x[1], -len(x[0])))
+    else:
+        ordered = [(v, counts.get(v, 1)) for v in values if v]
 
+    # Ключи лидеров кластеров — для быстрого поиска через rapidfuzz.process.
+    leader_keys: list[str] = []
     clusters: list[dict] = []
+    # Кэшируем key_fn: значения могут повторяться между вызовами через cleaned-форму.
+    key_cache: dict[str, str] = {}
+
     for value, freq in ordered:
-        key = key_fn(value)
+        key = key_cache.get(value)
+        if key is None:
+            key = key_fn(value)
+            key_cache[value] = key
         if not key:
             continue
 
-        best_idx, best_score = -1, -1.0
-        for i, cl in enumerate(clusters):
-            score = max(scorer(key, k) for k in cl["keys"])
-            if score > best_score:
-                best_score, best_idx = score, i
+        # Быстрый отбор ближайшего лидера через rapidfuzz.process.extractOne —
+        # реализовано на C, заметно быстрее ручного цикла для больших наборов.
+        if leader_keys:
+            match = process.extractOne(
+                key, leader_keys, scorer=scorer, score_cutoff=threshold,
+            )
+        else:
+            match = None
 
-        if best_idx >= 0 and best_score >= threshold:
-            cl = clusters[best_idx]
+        if match is not None:
+            _, _, idx = match
+            cl = clusters[idx]
             cl["keys"].add(key)
             cl["variants"][value] += freq
             cl["count"] += freq
@@ -66,5 +82,6 @@ def cluster_by_similarity(
                 "variants": Counter({value: freq}),
                 "count": freq,
             })
+            leader_keys.append(key)
 
     return clusters

@@ -115,21 +115,25 @@ class OrganizationNormalizer(BaseNormalizer):
         return _MULTISPACE_RE.sub(" ", body).strip()
 
     def build_candidates(self, values: list[str]) -> list[NormalizationCandidate]:
-        cleaned = [self._clean(v) for v in values if self._clean(v)]
-        if not cleaned:
+        uniq, counts = self._dedupe_with_counts(values)
+        if not uniq:
             return []
 
+        # Пред-кэш нормализации и ключей сравнения (каждое значение — 1 раз).
+        norm_cache: dict[str, str] = {v: self.normalize_value(v) for v in uniq}
+        key_cache: dict[str, str] = {v: self._compare_key(v) for v in uniq}
+
         clusters = cluster_by_similarity(
-            cleaned,
-            key_fn=self._compare_key,
+            uniq,
+            key_fn=lambda v: key_cache.get(v, ""),
             threshold=self.threshold,
+            counts=counts,
         )
 
         candidates: list[NormalizationCandidate] = []
         for cl in clusters:
             variants = list(cl["variants"].keys())
-            # Канонический вид — нормализация самого частого варианта в кластере
-            canonical = self.normalize_value(cl["canonical"])
+            canonical = norm_cache.get(cl["canonical"]) or self.normalize_value(cl["canonical"])
             confidence = 1.0 if len(variants) == 1 else 0.85
 
             candidates.append(

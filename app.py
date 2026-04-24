@@ -81,7 +81,22 @@ _init_state()
 
 @st.cache_data(show_spinner=False)
 def _read_excel(file_bytes: bytes) -> dict[str, pd.DataFrame]:
-    xls = pd.ExcelFile(io.BytesIO(file_bytes), engine="openpyxl")
+    """Читаем Excel через calamine — в разы быстрее openpyxl на больших файлах.
+
+    Фолбэк на openpyxl для .xls / старых форматов — calamine гораздо экономнее
+    по памяти и времени (Rust-реализация).
+    """
+    for engine in ("calamine", "openpyxl"):
+        try:
+            xls = pd.ExcelFile(io.BytesIO(file_bytes), engine=engine)
+            return {
+                name: pd.read_excel(xls, sheet_name=name, dtype=object)
+                for name in xls.sheet_names
+            }
+        except Exception:
+            continue
+    # Последняя попытка — пусть pandas сам решит.
+    xls = pd.ExcelFile(io.BytesIO(file_bytes))
     return {name: pd.read_excel(xls, sheet_name=name, dtype=object) for name in xls.sheet_names}
 
 
@@ -721,11 +736,17 @@ if has_any_results:
                         "meta": c.meta,
                     })
 
-                col_series = normalized_df[col].astype(object)
-                new_series = col_series.map(
-                    lambda x: mapping.get(str(x), x) if pd.notna(x) else x
-                )
-                changed = int((col_series.astype(str) != new_series.astype(str)).sum())
+                # Векторизованная замена: переводим в str, делаем .map(dict) — это в разы
+                # быстрее .map(lambda) на больших DataFrame.
+                col_series = normalized_df[col]
+                str_series = col_series.astype(str)
+                if mapping:
+                    replaced = str_series.map(mapping)
+                    # Где замены нет (NaN у .map) — оставляем исходное значение.
+                    new_series = replaced.where(replaced.notna(), col_series)
+                else:
+                    new_series = col_series
+                changed = int((str_series != new_series.astype(str)).sum())
                 sheet_changed += changed
                 normalized_df[col] = new_series
 

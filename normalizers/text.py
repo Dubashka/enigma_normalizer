@@ -90,14 +90,18 @@ class TextNormalizer(BaseNormalizer):
 
     # -- Кандидаты -------------------------------------------------------
     def build_candidates(self, values: list[str]) -> list[NormalizationCandidate]:
-        cleaned = [self._basic_clean(v) for v in values if self._basic_clean(v)]
-        if not cleaned:
+        uniq, counts = self._dedupe_with_counts(values)
+        if not uniq:
             return []
 
+        # Кэшируем ключ сравнения на уникальных значениях.
+        key_cache = {v: self._compare_key(v) for v in uniq}
+
         clusters = cluster_by_similarity(
-            cleaned,
-            key_fn=self._compare_key,
+            uniq,
+            key_fn=lambda v: key_cache.get(v, ""),
             threshold=self.threshold,
+            counts=counts,
         )
 
         candidates: list[NormalizationCandidate] = []

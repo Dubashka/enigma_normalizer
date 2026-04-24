@@ -224,7 +224,7 @@ def scan_dataframe(
     threshold: float = 0.6,
     recommend_threshold: float = 0.6,
     min_values: int = 2,
-    sample_size: int = 200,
+    sample_size: int = 100,
 ) -> list[ColumnScan]:
     """Прогоняет автодетект по каждой колонке DataFrame.
 
@@ -247,10 +247,13 @@ def scan_dataframe(
     results: list[ColumnScan] = []
     for col in df.columns:
         series = df[col].dropna()
-        # Уберём пустые строки после приведения к str
-        values = [str(v).strip() for v in series.tolist()]
+        # Для автодетекта берём только head(sample_size*3) — больше не нужно для
+        # оценки, а на многомиллионных колонках dropna+tolist — дорого.
+        preview = series.head(max(sample_size * 3, min_values * 10))
+        values = [str(v).strip() for v in preview.tolist()]
         values = [v for v in values if v and v.lower() not in ("nan", "none", "null", "-")]
-        non_empty = len(values)
+        # Непустые по всей колонке (для показа в UI) берём дешево: len(series).
+        non_empty = int(len(series))
 
         if non_empty < min_values:
             results.append(ColumnScan(
