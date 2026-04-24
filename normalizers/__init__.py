@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from .address import AddressNormalizer
 from .base import BaseNormalizer, NormalizationCandidate
+from .document import normalize_document, normalize_docx, extract_text_from_txt
 from .email import EmailNormalizer
 from .inn import InnNormalizer
 from .organization import OrganizationNormalizer
@@ -36,6 +37,15 @@ LABELS: dict[str, str] = {
     "text": "Текстовые значения",
 }
 
+DOCUMENT_TYPE_LABELS: dict[str, str] = {
+    "fio": "ФИО",
+    "phone": "Телефоны",
+    "email": "Email",
+    "inn": "ИНН",
+    "address": "Адреса",
+    "organization": "Организации",
+}
+
 
 def get_normalizer(key: str) -> BaseNormalizer:
     if key not in REGISTRY:
@@ -46,7 +56,11 @@ def get_normalizer(key: str) -> BaseNormalizer:
 __all__ = [
     "REGISTRY",
     "LABELS",
+    "DOCUMENT_TYPE_LABELS",
     "get_normalizer",
     "BaseNormalizer",
     "NormalizationCandidate",
+    "normalize_document",
+    "normalize_docx",
+    "extract_text_from_txt",
 ]
