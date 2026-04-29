@@ -129,11 +129,7 @@ def run_text_document_mode():
         '<div class="app-header">'
         '<span class="logo-mark">📄</span>'
         '<div>'
-        '<h1>
-        
-      
-      Нормализация документов</h1>'
-        '<p class="subtitle">Поиск и нормализация PII в текстовых файлах</p>'
+        '<p ><h1>Нормализация документов</h1></p>'
         '</div>'
         '</div>',
         unsafe_allow_html=True,
