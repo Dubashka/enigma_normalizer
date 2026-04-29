@@ -59,7 +59,7 @@ def _inject_css():
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 
         :root {
-            --primary:        #CF0522;  /* Reksoft Red */
+            --primary:        #CF0522;
             --primary-hover:  #a8041c;
             --success:        #2F9E3F;
             --warning:        #C007A7;
@@ -68,6 +68,7 @@ def _inject_css():
             --surface:        #F5F4F4;
             --bg:             #FFFFFF;
             --header-bg:      #000000;
+            --header-h:       48px;
             --border:         1px solid #E0E0E0;
             --border-color:   #E0E0E0;
             --radius:         4px;
@@ -78,16 +79,26 @@ def _inject_css():
             font-family: var(--font) !important;
         }
 
-        /* ---- Шапка приложения — чёрная полоса ---- */
+        /* ---- Скрыть нативный хедер и футер Streamlit ---- */
+        header[data-testid="stHeader"] {
+            display: none !important;
+        }
+        #MainMenu { display: none !important; }
+        footer { display: none !important; }
+
+        /* ---- Фиксированная шапка приложения ---- */
         .app-header {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            z-index: 999;
             display: flex;
             align-items: center;
             justify-content: space-between;
             background: var(--header-bg);
-            padding: 0.85rem 1.5rem;
-            margin-bottom: 1.5rem;
-            margin-left: -1rem;
-            margin-right: -1rem;
+            height: var(--header-h);
+            padding: 0 1.5rem;
         }
         .app-header .app-title {
             font-size: 1rem;
@@ -102,6 +113,16 @@ def _inject_css():
             color: #FFFFFF;
             letter-spacing: 0.05em;
             text-transform: uppercase;
+        }
+
+        /* ---- Отступ сверху для основного контента ---- */
+        .main .block-container {
+            padding-top: calc(var(--header-h) + 1.5rem) !important;
+        }
+
+        /* ---- Отступ для сайдбара ---- */
+        [data-testid="stSidebar"] > div:first-child {
+            padding-top: calc(var(--header-h) + 1rem) !important;
         }
 
         /* ---- Степпер прогресса ---- */
@@ -370,11 +391,6 @@ def _inject_css():
             padding-bottom: 0.35rem;
             margin-top: 1.5rem !important;
         }
-
-        /* ---- Основной контейнер ---- */
-        .main .block-container {
-            padding-top: 0 !important;
-        }
         </style>
         """,
         unsafe_allow_html=True,
@@ -389,7 +405,7 @@ _inject_css()
 # ---------------------------------------------------------------------------
 
 def _app_header():
-    """Шапка в стиле Рексофт: чёрный фон, название слева (серым), логотип справа (белым)."""
+    """Фиксированная шапка: чёрный фон, название слева (серым), логотип справа (белым)."""
     st.markdown(
         '<div class="app-header">'
         '<p class="app-title">Enigma Normalizer</p>'
@@ -758,7 +774,6 @@ if mode == "🔍 Поиск аномалий":
 
     _step_header(3, "Результаты проверки")
 
-    # Метрики с цветовым кодированием
     sev_icon = {"high": "🔴", "medium": "🟡", "low": "⚪"}
     total = sum(g.count for gs in all_results.values() for g in gs)
     by_sev = {
@@ -833,8 +848,6 @@ if mode == "🔍 Поиск аномалий":
 # Режим: Нормализация
 # ---------------------------------------------------------------------------
 
-# Шаг 2. Выбор листов
-# ---------------------------------------------------------------------------
 _step_header(2, "Выбор листов", "Система автоматически распознаёт колонки")
 
 all_sheets = list(st.session_state.sheets_data.keys())
@@ -1004,7 +1017,6 @@ for tab, sh in zip(sheet_tabs, selected_sheets):
                     )
 
 
-# Сводка
 per_sheet_cols: dict[str, list[str]] = {sh: _selected_columns(sh) for sh in selected_sheets}
 total_cols = sum(len(v) for v in per_sheet_cols.values())
 missing: list[tuple[str, str]] = [
@@ -1286,7 +1298,6 @@ if has_any_results:
             f"по **{total_cols_applied}** колонкам на **{len(payload['sheets'])}** листах."
         )
 
-        # Сравнение до/после
         with st.expander("Сравнение «до / после» (первые 15 строк)", expanded=True):
             comp_tabs = st.tabs([f"📋 {sh}" for sh in payload["sheets"].keys()])
             for comp_tab, sh in zip(comp_tabs, payload["sheets"].keys()):
@@ -1305,7 +1316,6 @@ if has_any_results:
                     combined = pd.concat([before, after], axis=1)[ordered_cols]
                     st.dataframe(combined, use_container_width=True, hide_index=True)
 
-        # Скачивание
         xlsx_buffer = io.BytesIO()
         with pd.ExcelWriter(xlsx_buffer, engine="xlsxwriter") as writer:
             for name, sdf in st.session_state.sheets_data.items():
