@@ -90,7 +90,7 @@ def _inject_css():
         .app-header {
             position: fixed;
             top: 0;
-            left: 0;
+            left: 0;        /* стартовое значение; JS перезапишет его */
             right: 0;
             z-index: 100;
             display: flex;
@@ -99,6 +99,7 @@ def _inject_css():
             background: var(--header-bg);
             height: var(--header-h);
             padding: 0 1.5rem;
+            transition: left 0.3s ease;   /* плавная анимация при открытии/закрытии сайдбара */
         }
         .app-header .app-title {
             font-size: 1rem;
@@ -126,8 +127,6 @@ def _inject_css():
         }
 
         /* ---- Кнопка collapse/expand сайдбара — поверх шапки ---- */
-        /* Эта кнопка должна быть ВЫШЕ z-index шапки (100),
-           и позиционироваться внутри зоны шапки (top: 0, height: var(--header-h)) */
         [data-testid="stSidebarCollapsedControl"] {
             top: 0 !important;
             height: var(--header-h) !important;
@@ -426,6 +425,55 @@ def _inject_css():
             margin-top: 1.5rem !important;
         }
         </style>
+
+        <script>
+        // Динамически сдвигаем левый край шапки вслед за шириной сайдбара
+        (function() {
+            function updateHeaderLeft() {
+                var sidebar = document.querySelector('[data-testid="stSidebar"]');
+                var header = document.querySelector('.app-header');
+                if (!header) return;
+                if (sidebar) {
+                    var rect = sidebar.getBoundingClientRect();
+                    // Если сайдбар виден (ширина > 0), сдвигаем шапку вправо на его ширину
+                    var w = rect.width > 10 ? rect.width : 0;
+                    header.style.left = w + 'px';
+                } else {
+                    header.style.left = '0px';
+                }
+            }
+
+            // Запускаем сразу и потом наблюдаем за изменениями DOM / размеров
+            var ro = new ResizeObserver(updateHeaderLeft);
+
+            function attachObserver() {
+                var sidebar = document.querySelector('[data-testid="stSidebar"]');
+                if (sidebar) {
+                    ro.observe(sidebar);
+                    updateHeaderLeft();
+                } else {
+                    setTimeout(attachObserver, 100);
+                }
+            }
+
+            // Также наблюдаем за появлением самой шапки
+            var mo = new MutationObserver(function() {
+                updateHeaderLeft();
+                var sidebar = document.querySelector('[data-testid="stSidebar"]');
+                if (sidebar) ro.observe(sidebar);
+            });
+
+            document.addEventListener('DOMContentLoaded', function() {
+                mo.observe(document.body, { childList: true, subtree: true });
+                attachObserver();
+            });
+            // На случай, если DOMContentLoaded уже сработал
+            if (document.readyState !== 'loading') {
+                mo.observe(document.body, { childList: true, subtree: true });
+                attachObserver();
+            }
+        })();
+        </script>
         """,
         unsafe_allow_html=True,
     )
