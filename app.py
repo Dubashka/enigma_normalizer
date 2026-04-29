@@ -92,7 +92,7 @@ def _inject_css():
             top: 0;
             left: 0;
             right: 0;
-            z-index: 999;
+            z-index: 100;
             display: flex;
             align-items: center;
             justify-content: space-between;
@@ -125,18 +125,38 @@ def _inject_css():
             padding-top: calc(var(--header-h) + 1rem) !important;
         }
 
-        /* ---- Кнопка collapse/expand сайдбара ---- */
-        [data-testid="stSidebarCollapsedControl"],
-        button[data-testid="baseButton-headerNoPadding"],
-        button[kind="header"] {
-            top: calc(var(--header-h) + 0.5rem) !important;
-            z-index: 1000 !important;
+        /* ---- Кнопка collapse/expand сайдбара — поверх шапки ---- */
+        /* Эта кнопка должна быть ВЫШЕ z-index шапки (100),
+           и позиционироваться внутри зоны шапки (top: 0, height: var(--header-h)) */
+        [data-testid="stSidebarCollapsedControl"] {
+            top: 0 !important;
+            height: var(--header-h) !important;
+            z-index: 200 !important;
+            display: flex !important;
+            align-items: center !important;
         }
-
-        /* Streamlit рисует стрелку-тоггл как элемент внутри .stMainBlockContainer */
         [data-testid="collapsedControl"] {
-            top: calc(var(--header-h) + 0.5rem) !important;
-            z-index: 1000 !important;
+            top: 0 !important;
+            height: var(--header-h) !important;
+            z-index: 200 !important;
+            display: flex !important;
+            align-items: center !important;
+        }
+        /* Кнопка внутри контейнера тоггла */
+        [data-testid="stSidebarCollapsedControl"] button,
+        [data-testid="collapsedControl"] button {
+            color: #FFFFFF !important;
+            background: transparent !important;
+        }
+        [data-testid="stSidebarCollapsedControl"] button:hover,
+        [data-testid="collapsedControl"] button:hover {
+            background: rgba(255,255,255,0.15) !important;
+        }
+        /* Иконка/стрелка внутри кнопки */
+        [data-testid="stSidebarCollapsedControl"] button svg,
+        [data-testid="collapsedControl"] button svg {
+            fill: #FFFFFF !important;
+            stroke: #FFFFFF !important;
         }
 
         /* ---- Степпер прогресса ---- */
