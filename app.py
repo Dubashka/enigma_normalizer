@@ -99,6 +99,21 @@ def _inject_css():
             display: none !important;
         }
 
+        /* ---- Логотип в сайдбаре ---- */
+        .sidebar-logo-wrap {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 1rem 0.5rem 0.75rem;
+            border-bottom: 1px solid var(--border-color);
+            margin-bottom: 0.75rem;
+        }
+        .sidebar-logo-wrap img {
+            max-width: 100%;
+            max-height: 72px;
+            object-fit: contain;
+        }
+
         /* ---- Фиксированная шапка приложения ---- */
         .app-header {
             position: fixed;
@@ -136,7 +151,7 @@ def _inject_css():
 
         /* ---- Отступ для сайдбара ---- */
         [data-testid="stSidebar"] > div:first-child {
-            padding-top: calc(var(--header-h) + 1rem) !important;
+            padding-top: calc(var(--header-h) + 0.25rem) !important;
         }
 
         /* ---- Степпер прогресса ---- */
@@ -653,6 +668,13 @@ _app_header()
 # Переключатель режима (в сайдбаре)
 # ---------------------------------------------------------------------------
 with st.sidebar:
+    # --- Логотип в верхней части сайдбара ---
+    st.image("assets/logo.png", use_container_width=True)
+    st.markdown(
+        '<div style="border-bottom: 1px solid #E0E0E0; margin-bottom: 0.75rem;"></div>',
+        unsafe_allow_html=True,
+    )
+
     st.markdown(
         '<div style="font-size:0.7rem;font-weight:700;text-transform:uppercase;'
         'letter-spacing:0.07em;color:#8C8C8C;padding:0.5rem 0 0.4rem;">Режим работы</div>',
