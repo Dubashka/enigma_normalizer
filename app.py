@@ -375,15 +375,13 @@ _inject_css()
 def _app_header():
     """Логотип + название приложения."""
     st.markdown(
-        """
-        <div class="app-header">
-            <span class="logo-mark">🧬</span>
-            <div>
-                <h1>Enigma Normalizer</h1>
-                <p class="subtitle">Проверка алгоритмов нормализации перед анонимизацией</p>
-            </div>
-        </div>
-        """,
+        '<div class="app-header">'
+        '<span class="logo-mark">🧬</span>'
+        '<div>'
+        '<h1>Enigma Normalizer</h1>'
+        '<p class="subtitle">Проверка алгоритмов нормализации перед анонимизацией</p>'
+        '</div>'
+        '</div>',
         unsafe_allow_html=True,
     )
 
@@ -392,20 +390,18 @@ def _step_header(num: int, title: str, hint: str = "") -> None:
     """Рендерит стилизованный заголовок шага с номером."""
     hint_html = f'<span class="step-hint">{hint}</span>' if hint else ""
     st.markdown(
-        f"""
-        <div class="step-header">
-            <span class="step-num">{num}</span>
-            <span class="step-title">{title}</span>
-            {hint_html}
-        </div>
-        """,
+        f'<div class="step-header">'
+        f'<span class="step-num">{num}</span>'
+        f'<span class="step-title">{title}</span>'
+        f'{hint_html}'
+        f'</div>',
         unsafe_allow_html=True,
     )
 
 
 def _progress_stepper(current_step: int, steps: list[str]) -> None:
     """Рендерит визуальный степпер над контентом."""
-    items_html = ""
+    items = []
     for i, label in enumerate(steps, start=1):
         if i < current_step:
             cls = "done"
@@ -416,16 +412,14 @@ def _progress_stepper(current_step: int, steps: list[str]) -> None:
         else:
             cls = ""
             circle = str(i)
-        items_html += f"""
-            <div class="step-item {cls}">
-                <div class="step-circle">{circle}</div>
-                <div class="step-label">{label}</div>
-            </div>
-        """
-    st.markdown(
-        f'<div class="step-progress">{items_html}</div>',
-        unsafe_allow_html=True,
-    )
+        items.append(
+            f'<div class="step-item {cls}">'
+            f'<div class="step-circle">{circle}</div>'
+            f'<div class="step-label">{label}</div>'
+            f'</div>'
+        )
+    html = '<div class="step-progress">' + "".join(items) + "</div>"
+    st.markdown(html, unsafe_allow_html=True)
 
 
 def _badge(text: str, kind: str = "primary") -> str:
@@ -435,13 +429,11 @@ def _badge(text: str, kind: str = "primary") -> str:
 
 def _empty_state(icon: str, title: str, desc: str) -> None:
     st.markdown(
-        f"""
-        <div class="empty-state">
-            <div class="es-icon">{icon}</div>
-            <div class="es-title">{title}</div>
-            <div class="es-desc">{desc}</div>
-        </div>
-        """,
+        f'<div class="empty-state">'
+        f'<div class="es-icon">{icon}</div>'
+        f'<div class="es-title">{title}</div>'
+        f'<div class="es-desc">{desc}</div>'
+        f'</div>',
         unsafe_allow_html=True,
     )
 
@@ -586,25 +578,23 @@ with st.sidebar:
     )
     st.divider()
     st.markdown(
-        """
-        <div class="sidebar-section">
-            <h4>О сервисе</h4>
-            Проверка алгоритмов нормализации перед анонимизацией в проекте <b>Enigma</b>.
-            Данные хранятся только в текущей сессии.
-        </div>
-        <div class="sidebar-section">
-            <h4>Поддерживаемые типы</h4>
-            <ul>
-                <li>🧑 ФИО</li>
-                <li>🏢 Организации</li>
-                <li>📍 Адреса</li>
-                <li>📞 Телефоны</li>
-                <li>🪪 ИНН</li>
-                <li>✉️ Email</li>
-                <li>📝 Текстовые значения</li>
-            </ul>
-        </div>
-        """,
+        '<div class="sidebar-section">'
+        '<h4>О сервисе</h4>'
+        'Проверка алгоритмов нормализации перед анонимизацией в проекте <b>Enigma</b>. '
+        'Данные хранятся только в текущей сессии.'
+        '</div>'
+        '<div class="sidebar-section">'
+        '<h4>Поддерживаемые типы</h4>'
+        '<ul>'
+        '<li>🧑 ФИО</li>'
+        '<li>🏢 Организации</li>'
+        '<li>📍 Адреса</li>'
+        '<li>📞 Телефоны</li>'
+        '<li>🪪 ИНН</li>'
+        '<li>✉️ Email</li>'
+        '<li>📝 Текстовые значения</li>'
+        '</ul>'
+        '</div>',
         unsafe_allow_html=True,
     )
 
@@ -763,26 +753,12 @@ if mode == "🔍 Поиск аномалий":
         for sev in ("high", "medium", "low")
     }
     st.markdown(
-        f"""
-        <div class="metric-row">
-            <div class="metric-card total">
-                <div class="mc-value">{total}</div>
-                <div class="mc-label">Всего находок</div>
-            </div>
-            <div class="metric-card high">
-                <div class="mc-value">{by_sev['high']}</div>
-                <div class="mc-label">🔴 Критичные</div>
-            </div>
-            <div class="metric-card medium">
-                <div class="mc-value">{by_sev['medium']}</div>
-                <div class="mc-label">🟡 Средние</div>
-            </div>
-            <div class="metric-card low">
-                <div class="mc-value">{by_sev['low']}</div>
-                <div class="mc-label">⚪ Незначительные</div>
-            </div>
-        </div>
-        """,
+        '<div class="metric-row">'
+        f'<div class="metric-card total"><div class="mc-value">{total}</div><div class="mc-label">Всего находок</div></div>'
+        f'<div class="metric-card high"><div class="mc-value">{by_sev["high"]}</div><div class="mc-label">🔴 Критичные</div></div>'
+        f'<div class="metric-card medium"><div class="mc-value">{by_sev["medium"]}</div><div class="mc-label">🟡 Средние</div></div>'
+        f'<div class="metric-card low"><div class="mc-value">{by_sev["low"]}</div><div class="mc-label">⚪ Незначительные</div></div>'
+        '</div>',
         unsafe_allow_html=True,
     )
 
