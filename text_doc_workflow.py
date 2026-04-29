@@ -124,16 +124,7 @@ def _reset_after_upload(name: str):
 def run_text_document_mode():
     _init_state()
 
-    # Заголовок
-    st.markdown(
-        '<div class="app-header">'
-        '<span class="logo-mark">📄</span>'
-        '<div>'
-        '<p ><h1>Нормализация документов</h1></p>'
-        '</div>'
-        '</div>',
-        unsafe_allow_html=True,
-    )
+
 
     # Определяем текущий шаг для степпера
     td_step = 1
