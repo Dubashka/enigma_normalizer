@@ -86,19 +86,6 @@ def _inject_css():
         #MainMenu { display: none !important; }
         footer { display: none !important; }
 
-        /* ---- Скрыть кнопку сворачивания/разворачивания сайдбара ---- */
-        /* Кнопка ">" когда сайдбар свёрнут */
-        [data-testid="stSidebarCollapsedControl"] {
-            display: none !important;
-        }
-        [data-testid="collapsedControl"] {
-            display: none !important;
-        }
-        /* Кнопка "<" внутри сайдбара (свернуть) */
-        [data-testid="stSidebarCollapseButton"] {
-            display: none !important;
-        }
-
         /* ---- Фиксированная шапка приложения ---- */
         .app-header {
             position: fixed;
