@@ -98,15 +98,6 @@ def _inject_css():
         [data-testid="stSidebarCollapseButton"] {
             display: none !important;
         }
-        /* Универсальный селектор кнопки тоггла в шапке сайдбара */
-        button[data-testid="baseButton-headerNoPadding"] {
-            display: none !important;
-        }
-        /* Кнопка collapse внутри сайдбара (все версии Streamlit) */
-        [data-testid="stSidebar"] button[kind="headerNoPadding"],
-        [data-testid="stSidebar"] > div > div > div > button {
-            display: none !important;
-        }
 
         /* ---- Фиксированная шапка приложения ---- */
         .app-header {
