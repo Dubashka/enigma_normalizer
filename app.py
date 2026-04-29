@@ -102,17 +102,17 @@ def _inject_css():
         }
         .app-header .app-title {
             font-size: 1rem;
-            font-weight: 500;
-            color: var(--text-muted);
-            letter-spacing: 0.02em;
-            margin: 0;
-        }
-        .app-header .app-logo {
-            font-size: 0.9rem;
             font-weight: 700;
             color: #FFFFFF;
             letter-spacing: 0.05em;
             text-transform: uppercase;
+            margin: 0;
+        }
+        .app-header .app-logo {
+            font-size: 0.9rem;
+            font-weight: 500;
+            color: var(--text-muted);
+            letter-spacing: 0.02em;
         }
 
         /* ---- Отступ сверху для основного контента ---- */
@@ -123,6 +123,20 @@ def _inject_css():
         /* ---- Отступ для сайдбара ---- */
         [data-testid="stSidebar"] > div:first-child {
             padding-top: calc(var(--header-h) + 1rem) !important;
+        }
+
+        /* ---- Кнопка collapse/expand сайдбара ---- */
+        [data-testid="stSidebarCollapsedControl"],
+        button[data-testid="baseButton-headerNoPadding"],
+        button[kind="header"] {
+            top: calc(var(--header-h) + 0.5rem) !important;
+            z-index: 1000 !important;
+        }
+
+        /* Streamlit рисует стрелку-тоггл как элемент внутри .stMainBlockContainer */
+        [data-testid="collapsedControl"] {
+            top: calc(var(--header-h) + 0.5rem) !important;
+            z-index: 1000 !important;
         }
 
         /* ---- Степпер прогресса ---- */
@@ -405,11 +419,11 @@ _inject_css()
 # ---------------------------------------------------------------------------
 
 def _app_header():
-    """Фиксированная шапка: чёрный фон, название слева (серым), логотип справа (белым)."""
+    """Фиксированная шапка: чёрный фон, логотип слева (белым), название справа (серым)."""
     st.markdown(
         '<div class="app-header">'
-        '<p class="app-title">Enigma Normalizer</p>'
-        '<span class="app-logo">Reksoft</span>'
+        '<p class="app-title">Reksoft</p>'
+        '<span class="app-logo">Enigma Normalizer</span>'
         '</div>',
         unsafe_allow_html=True,
     )
