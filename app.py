@@ -86,6 +86,28 @@ def _inject_css():
         #MainMenu { display: none !important; }
         footer { display: none !important; }
 
+        /* ---- Скрыть кнопку сворачивания/разворачивания сайдбара ---- */
+        /* Кнопка ">" когда сайдбар свёрнут */
+        [data-testid="stSidebarCollapsedControl"] {
+            display: none !important;
+        }
+        [data-testid="collapsedControl"] {
+            display: none !important;
+        }
+        /* Кнопка "<" внутри сайдбара (свернуть) */
+        [data-testid="stSidebarCollapseButton"] {
+            display: none !important;
+        }
+        /* Универсальный селектор кнопки тоггла в шапке сайдбара */
+        button[data-testid="baseButton-headerNoPadding"] {
+            display: none !important;
+        }
+        /* Кнопка collapse внутри сайдбара (все версии Streamlit) */
+        [data-testid="stSidebar"] button[kind="headerNoPadding"],
+        [data-testid="stSidebar"] > div > div > div > button {
+            display: none !important;
+        }
+
         /* ---- Фиксированная шапка приложения ---- */
         .app-header {
             position: fixed;
@@ -124,38 +146,6 @@ def _inject_css():
         /* ---- Отступ для сайдбара ---- */
         [data-testid="stSidebar"] > div:first-child {
             padding-top: calc(var(--header-h) + 1rem) !important;
-        }
-
-        /* ---- Кнопка collapse/expand сайдбара — поверх шапки ---- */
-        [data-testid="stSidebarCollapsedControl"] {
-            top: 0 !important;
-            height: var(--header-h) !important;
-            z-index: 200 !important;
-            display: flex !important;
-            align-items: center !important;
-        }
-        [data-testid="collapsedControl"] {
-            top: 0 !important;
-            height: var(--header-h) !important;
-            z-index: 200 !important;
-            display: flex !important;
-            align-items: center !important;
-        }
-        /* Кнопка внутри контейнера тоггла */
-        [data-testid="stSidebarCollapsedControl"] button,
-        [data-testid="collapsedControl"] button {
-            color: #FFFFFF !important;
-            background: transparent !important;
-        }
-        [data-testid="stSidebarCollapsedControl"] button:hover,
-        [data-testid="collapsedControl"] button:hover {
-            background: rgba(255,255,255,0.15) !important;
-        }
-        /* Иконка/стрелка внутри кнопки */
-        [data-testid="stSidebarCollapsedControl"] button svg,
-        [data-testid="collapsedControl"] button svg {
-            fill: #FFFFFF !important;
-            stroke: #FFFFFF !important;
         }
 
         /* ---- Степпер прогресса ---- */
