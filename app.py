@@ -48,52 +48,60 @@ st.set_page_config(
 
 
 # ---------------------------------------------------------------------------
-# Глобальные стили
+# Глобальные стили — Reksoft Corporate Design System
 # ---------------------------------------------------------------------------
 
 def _inject_css():
     st.markdown(
         """
         <style>
-        /* ---- Общие токены ---- */
+        /* ---- Reksoft Design Tokens ---- */
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
         :root {
-            --primary: #01696f;
-            --primary-hover: #0c4e54;
-            --bg: #f7f6f2;
-            --surface: #f9f8f5;
-            --border: #d4d1ca;
-            --text: #28251d;
-            --muted: #7a7974;
-            --success: #437a22;
-            --warning: #d19900;
-            --error: #a12c7b;
-            --radius: 0.5rem;
+            --primary:        #CF0522;  /* Reksoft Red */
+            --primary-hover:  #a8041c;
+            --success:        #2F9E3F;
+            --warning:        #C007A7;
+            --text:           #000000;
+            --text-muted:     #8C8C8C;
+            --surface:        #F5F4F4;
+            --bg:             #FFFFFF;
+            --header-bg:      #000000;
+            --border:         1px solid #E0E0E0;
+            --border-color:   #E0E0E0;
+            --radius:         4px;
+            --font:           'Stapel', 'Inter', sans-serif;
         }
 
-        /* ---- Шапка приложения ---- */
+        html, body, [class*="css"] {
+            font-family: var(--font) !important;
+        }
+
+        /* ---- Шапка приложения — чёрная полоса ---- */
         .app-header {
             display: flex;
             align-items: center;
-            gap: 0.75rem;
-            padding: 1.25rem 0 0.5rem;
-            margin-bottom: 0.25rem;
+            justify-content: space-between;
+            background: var(--header-bg);
+            padding: 0.85rem 1.5rem;
+            margin-bottom: 1.5rem;
+            margin-left: -1rem;
+            margin-right: -1rem;
         }
-        .app-header .logo-mark {
-            font-size: 2rem;
-            line-height: 1;
-        }
-        .app-header h1 {
-            font-size: 1.6rem !important;
-            font-weight: 700 !important;
-            color: var(--primary) !important;
-            margin: 0 !important;
-            padding: 0 !important;
-            letter-spacing: -0.02em;
-        }
-        .app-header .subtitle {
-            font-size: 0.85rem;
-            color: var(--muted);
+        .app-header .app-title {
+            font-size: 1rem;
+            font-weight: 500;
+            color: var(--text-muted);
+            letter-spacing: 0.02em;
             margin: 0;
+        }
+        .app-header .app-logo {
+            font-size: 0.9rem;
+            font-weight: 700;
+            color: #FFFFFF;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
         }
 
         /* ---- Степпер прогресса ---- */
@@ -120,8 +128,8 @@ def _inject_css():
             top: 14px;
             left: calc(50% + 14px);
             width: calc(100% - 28px);
-            height: 2px;
-            background: var(--border);
+            height: 1px;
+            background: var(--text-muted);
             z-index: 0;
         }
         .step-item.active:not(:last-child)::after,
@@ -137,33 +145,33 @@ def _inject_css():
             justify-content: center;
             font-size: 0.75rem;
             font-weight: 700;
-            border: 2px solid var(--border);
+            border: 1px solid var(--text-muted);
             background: var(--bg);
-            color: var(--muted);
+            color: var(--text-muted);
             position: relative;
             z-index: 1;
-            transition: all 0.2s;
         }
         .step-item.done .step-circle {
-            background: var(--primary);
-            border-color: var(--primary);
+            background: var(--text-muted);
+            border-color: var(--text-muted);
             color: #fff;
         }
         .step-item.active .step-circle {
             background: var(--primary);
             border-color: var(--primary);
             color: #fff;
-            box-shadow: 0 0 0 4px rgba(1,105,111,0.15);
         }
         .step-label {
             font-size: 0.7rem;
-            color: var(--muted);
+            color: var(--text-muted);
             line-height: 1.2;
         }
-        .step-item.active .step-label,
-        .step-item.done .step-label {
+        .step-item.active .step-label {
             color: var(--primary);
             font-weight: 600;
+        }
+        .step-item.done .step-label {
+            color: var(--text-muted);
         }
 
         /* ---- Заголовки шагов ---- */
@@ -172,8 +180,8 @@ def _inject_css():
             align-items: center;
             gap: 0.6rem;
             padding: 0.75rem 1rem;
-            background: var(--surface);
-            border: 1px solid var(--border);
+            background: var(--bg);
+            border: var(--border);
             border-left: 3px solid var(--primary);
             border-radius: var(--radius);
             margin: 1.25rem 0 0.75rem;
@@ -199,12 +207,12 @@ def _inject_css():
         }
         .step-header .step-hint {
             font-size: 0.78rem;
-            color: var(--muted);
+            color: var(--text-muted);
             margin: 0;
             margin-left: auto;
         }
 
-        /* ---- Карточки метрик (аномалии) ---- */
+        /* ---- Карточки метрик ---- */
         .metric-row {
             display: flex;
             gap: 1rem;
@@ -215,8 +223,8 @@ def _inject_css():
             flex: 1;
             min-width: 120px;
             padding: 0.9rem 1rem;
-            background: var(--surface);
-            border: 1px solid var(--border);
+            background: var(--bg);
+            border: var(--border);
             border-radius: var(--radius);
             text-align: center;
         }
@@ -228,65 +236,52 @@ def _inject_css():
         }
         .metric-card .mc-label {
             font-size: 0.78rem;
-            color: var(--muted);
+            color: var(--text-muted);
             margin-top: 0.2rem;
         }
-        .metric-card.high .mc-value { color: #b91c1c; }
-        .metric-card.medium .mc-value { color: #b45309; }
-        .metric-card.low .mc-value { color: var(--muted); }
+        .metric-card.high .mc-value  { color: var(--primary); }
+        .metric-card.medium .mc-value { color: var(--warning); }
+        .metric-card.low .mc-value    { color: var(--text-muted); }
         .metric-card.total { border-left: 3px solid var(--primary); }
 
-        /* ---- Бейджи severity ---- */
+        /* ---- Бейджи ---- */
         .badge {
             display: inline-flex;
             align-items: center;
             gap: 0.25rem;
             padding: 0.15rem 0.5rem;
-            border-radius: 999px;
+            border-radius: var(--radius);
             font-size: 0.72rem;
             font-weight: 600;
             letter-spacing: 0.02em;
         }
-        .badge-high { background: #fee2e2; color: #b91c1c; }
-        .badge-medium { background: #fef3c7; color: #92400e; }
-        .badge-low { background: #f1f5f9; color: #475569; }
-        .badge-success { background: #dcfce7; color: #166534; }
-        .badge-primary { background: #ccf0ee; color: var(--primary); }
+        .badge-high    { background: #fde8ec; color: var(--primary); border: 1px solid var(--primary); }
+        .badge-medium  { background: #fce8f9; color: var(--warning); border: 1px solid var(--warning); }
+        .badge-low     { background: var(--surface); color: var(--text-muted); border: 1px solid var(--border-color); }
+        .badge-success { background: #e6f4e8; color: var(--success); border: 1px solid var(--success); }
+        .badge-primary { background: #fde8ec; color: var(--primary); border: 1px solid var(--primary); }
 
-        /* ---- Инфо-блок пустого состояния ---- */
+        /* ---- Пустое состояние ---- */
         .empty-state {
             display: flex;
             flex-direction: column;
             align-items: center;
             text-align: center;
             padding: 2.5rem 1rem;
-            color: var(--muted);
+            color: var(--text-muted);
         }
-        .empty-state .es-icon {
-            font-size: 2.5rem;
-            margin-bottom: 0.75rem;
-            opacity: 0.6;
-        }
-        .empty-state .es-title {
-            font-size: 1rem;
-            font-weight: 600;
-            color: var(--text);
-            margin-bottom: 0.35rem;
-        }
-        .empty-state .es-desc {
-            font-size: 0.85rem;
-            max-width: 40ch;
-            line-height: 1.5;
-        }
+        .empty-state .es-icon  { font-size: 2.5rem; margin-bottom: 0.75rem; opacity: 0.5; }
+        .empty-state .es-title { font-size: 1rem; font-weight: 600; color: var(--text); margin-bottom: 0.35rem; }
+        .empty-state .es-desc  { font-size: 0.85rem; max-width: 40ch; line-height: 1.5; }
 
         /* ---- Sidebar ---- */
         [data-testid="stSidebar"] {
             background: var(--surface) !important;
-            border-right: 1px solid var(--border);
+            border-right: var(--border);
         }
         .sidebar-section {
-            background: #fff;
-            border: 1px solid var(--border);
+            background: var(--bg);
+            border: var(--border);
             border-radius: var(--radius);
             padding: 0.75rem 0.9rem;
             margin-bottom: 0.75rem;
@@ -295,54 +290,66 @@ def _inject_css():
             line-height: 1.6;
         }
         .sidebar-section h4 {
-            font-size: 0.75rem;
+            font-size: 0.72rem;
             font-weight: 700;
             text-transform: uppercase;
             letter-spacing: 0.07em;
-            color: var(--muted);
+            color: var(--text-muted);
             margin: 0 0 0.5rem;
         }
-        .sidebar-section ul {
-            padding-left: 1.1em;
-            margin: 0;
-        }
-        .sidebar-section li {
-            margin-bottom: 0.2rem;
-        }
+        .sidebar-section ul { padding-left: 1.1em; margin: 0; }
+        .sidebar-section li { margin-bottom: 0.2rem; }
 
         /* ---- Режим-радио кнопки в сайдбаре ---- */
         [data-testid="stSidebar"] [data-testid="stRadio"] label {
             font-size: 0.9rem !important;
         }
 
-        /* ---- Таблицы: выровнять числа ---- */
+        /* ---- Таблицы ---- */
         [data-testid="stDataFrame"] table td,
         [data-testid="stDataFrame"] table th {
             font-variant-numeric: tabular-nums;
         }
 
-        /* ---- Скрыть якорные ссылки у st.header ---- */
+        /* ---- Скрыть якорные ссылки ---- */
         h1 a, h2 a, h3 a { display: none !important; }
 
         /* ---- Кнопки скачивания ---- */
         [data-testid="stDownloadButton"] button {
-            border: 1.5px solid var(--primary) !important;
+            border: 1px solid var(--primary) !important;
             color: var(--primary) !important;
-            background: #fff !important;
+            background: var(--bg) !important;
             font-weight: 600 !important;
+            border-radius: var(--radius) !important;
         }
         [data-testid="stDownloadButton"] button:hover {
-            background: #f0fafa !important;
+            background: var(--primary) !important;
+            color: #fff !important;
         }
 
         /* ---- Кнопка «primary» ---- */
         [data-testid="stButton"] button[kind="primary"] {
             background: var(--primary) !important;
             border-color: var(--primary) !important;
+            color: #fff !important;
+            border-radius: var(--radius) !important;
         }
         [data-testid="stButton"] button[kind="primary"]:hover {
             background: var(--primary-hover) !important;
             border-color: var(--primary-hover) !important;
+        }
+
+        /* ---- Обычные кнопки (secondary) ---- */
+        [data-testid="stButton"] button[kind="secondary"] {
+            background: var(--bg) !important;
+            border: 1px solid var(--primary) !important;
+            color: var(--primary) !important;
+            border-radius: var(--radius) !important;
+            font-weight: 500 !important;
+        }
+        [data-testid="stButton"] button[kind="secondary"]:hover {
+            background: var(--primary) !important;
+            color: #fff !important;
         }
 
         /* ---- Expanders ---- */
@@ -350,14 +357,23 @@ def _inject_css():
             font-weight: 600;
             color: var(--text);
         }
+        [data-testid="stExpander"] details {
+            border: var(--border) !important;
+            border-radius: var(--radius) !important;
+        }
 
-        /* ---- Компактнее заголовки st.header ---- */
+        /* ---- Заголовки st.header ---- */
         [data-testid="stHeadingWithActionElements"] h2 {
             font-size: 1.15rem !important;
             font-weight: 700 !important;
-            border-bottom: 2px solid var(--border);
+            border-bottom: 1px solid var(--border-color);
             padding-bottom: 0.35rem;
             margin-top: 1.5rem !important;
+        }
+
+        /* ---- Основной контейнер ---- */
+        .main .block-container {
+            padding-top: 0 !important;
         }
         </style>
         """,
@@ -373,14 +389,11 @@ _inject_css()
 # ---------------------------------------------------------------------------
 
 def _app_header():
-    """Логотип + название приложения."""
+    """Шапка в стиле Рексофт: чёрный фон, название слева (серым), логотип справа (белым)."""
     st.markdown(
         '<div class="app-header">'
-        '<span class="logo-mark">🧬</span>'
-        '<div>'
-        '<h1>Enigma Normalizer</h1>'
-        '<p class="subtitle">Проверка алгоритмов нормализации перед анонимизацией</p>'
-        '</div>'
+        '<p class="app-title">Enigma Normalizer</p>'
+        '<span class="app-logo">Reksoft</span>'
         '</div>',
         unsafe_allow_html=True,
     )
@@ -563,7 +576,7 @@ _app_header()
 with st.sidebar:
     st.markdown(
         '<div style="font-size:0.7rem;font-weight:700;text-transform:uppercase;'
-        'letter-spacing:0.07em;color:#7a7974;padding:0.5rem 0 0.4rem;">Режим работы</div>',
+        'letter-spacing:0.07em;color:#8C8C8C;padding:0.5rem 0 0.4rem;">Режим работы</div>',
         unsafe_allow_html=True,
     )
     mode = st.radio(
@@ -962,7 +975,7 @@ for tab, sh in zip(sheet_tabs, selected_sheets):
                         icon = "✅" if score >= 0.75 else ("🟡" if score >= 0.5 else "❓")
                         st.markdown(
                             f"{icon} **{LABELS[detected]}** "
-                            f"<span style='color:#7a7974;font-size:0.85em'>({score:.0%})</span>",
+                            f"<span style='color:#8C8C8C;font-size:0.85em'>({score:.0%})</span>",
                             unsafe_allow_html=True,
                         )
                     else:
