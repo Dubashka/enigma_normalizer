@@ -86,13 +86,16 @@ def _inject_css():
         #MainMenu { display: none !important; }
         footer { display: none !important; }
 
-        /* ---- Скрыть кнопки сворачивания сайдбара ---- */
-        /* Кнопка "<" внутри открытого сайдбара */
-        [data-testid="stSidebarCollapseButton"] {
+        /* ---- Скрыть кнопку сворачивания/разворачивания сайдбара ---- */
+        /* Кнопка ">" когда сайдбар свёрнут */
+        [data-testid="stSidebarCollapsedControl"] {
             display: none !important;
         }
-        /* Кнопка ">" для разворачивания свёрнутого сайдбара */
         [data-testid="collapsedControl"] {
+            display: none !important;
+        }
+        /* Кнопка "<" внутри сайдбара (свернуть) */
+        [data-testid="stSidebarCollapseButton"] {
             display: none !important;
         }
 
