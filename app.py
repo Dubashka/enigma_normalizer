@@ -86,6 +86,13 @@ def _inject_css():
         #MainMenu { display: none !important; }
         footer { display: none !important; }
 
+        /* ---- Скрыть ТОЛЬКО кнопку закрытия сайдбара (стрелка "<" внутри открытого бара).
+               Кнопка открытия (stSidebarCollapsedControl, стрелка ">") остаётся видимой.
+        ---- */
+        [data-testid="stSidebarCollapseButton"] {
+            display: none !important;
+        }
+
         /* ---- Фиксированная шапка приложения ---- */
         .app-header {
             position: fixed;
@@ -395,23 +402,27 @@ def _inject_css():
         </style>
 
         <script>
-        // Динамически сдвигаем левый край шапки вслед за шириной сайдбара
+        // Динамически сдвигаем левый край шапки вслед за шириной сайдбара.
+        // Когда сайдбар открыт  — left = ширина сайдбара (шапка не перекрывает контент).
+        // Когда сайдбар закрыт  — left = 48px (оставляем место для кнопки ">" открытия бара).
         (function() {
+            var COLLAPSED_OFFSET = 48; // px — ширина кнопки ">" открытия сайдбара
+
             function updateHeaderLeft() {
                 var sidebar = document.querySelector('[data-testid="stSidebar"]');
-                var header = document.querySelector('.app-header');
+                var header  = document.querySelector('.app-header');
                 if (!header) return;
+
                 if (sidebar) {
-                    var rect = sidebar.getBoundingClientRect();
-                    // Если сайдбар виден (ширина > 0), сдвигаем шапку вправо на его ширину
-                    var w = rect.width > 10 ? rect.width : 0;
-                    header.style.left = w + 'px';
+                    var w = sidebar.getBoundingClientRect().width;
+                    // Если сайдбар раскрыт (ширина > порогового значения) — сдвигаем на его ширину,
+                    // иначе оставляем минимальный отступ для кнопки открытия.
+                    header.style.left = (w > 60 ? w : COLLAPSED_OFFSET) + 'px';
                 } else {
-                    header.style.left = '0px';
+                    header.style.left = COLLAPSED_OFFSET + 'px';
                 }
             }
 
-            // Запускаем сразу и потом наблюдаем за изменениями DOM / размеров
             var ro = new ResizeObserver(updateHeaderLeft);
 
             function attachObserver() {
@@ -424,7 +435,6 @@ def _inject_css():
                 }
             }
 
-            // Также наблюдаем за появлением самой шапки
             var mo = new MutationObserver(function() {
                 updateHeaderLeft();
                 var sidebar = document.querySelector('[data-testid="stSidebar"]');
@@ -435,7 +445,6 @@ def _inject_css():
                 mo.observe(document.body, { childList: true, subtree: true });
                 attachObserver();
             });
-            // На случай, если DOMContentLoaded уже сработал
             if (document.readyState !== 'loading') {
                 mo.observe(document.body, { childList: true, subtree: true });
                 attachObserver();
