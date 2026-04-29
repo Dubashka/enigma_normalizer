@@ -1,6 +1,6 @@
 """Streamlit-воркфлоу нормализации текстовых документов.
 
-Этапы (по аналогии с excel-режимом):
+Этапы:
   1. Загрузка документа (txt / docx / md / rtf).
   2. Автоматический поиск PII-сущностей в тексте.
   3. Группировка по типу и запуск соответствующего нормализатора.
@@ -35,17 +35,72 @@ from utils.text_scan import (
 
 
 # ---------------------------------------------------------------------------
+# UI-хелперы (аналог из app.py — переиспользуются локально)
+# ---------------------------------------------------------------------------
+
+def _step_header(num: int, title: str, hint: str = "") -> None:
+    hint_html = f'<span class="step-hint">{hint}</span>' if hint else ""
+    st.markdown(
+        f"""
+        <div class="step-header">
+            <span class="step-num">{num}</span>
+            <span class="step-title">{title}</span>
+            {hint_html}
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def _progress_stepper(current_step: int, steps: list[str]) -> None:
+    items_html = ""
+    for i, label in enumerate(steps, start=1):
+        if i < current_step:
+            cls = "done"
+            circle = "✓"
+        elif i == current_step:
+            cls = "active"
+            circle = str(i)
+        else:
+            cls = ""
+            circle = str(i)
+        items_html += f"""
+            <div class="step-item {cls}">
+                <div class="step-circle">{circle}</div>
+                <div class="step-label">{label}</div>
+            </div>
+        """
+    st.markdown(
+        f'<div class="step-progress">{items_html}</div>',
+        unsafe_allow_html=True,
+    )
+
+
+def _empty_state(icon: str, title: str, desc: str) -> None:
+    st.markdown(
+        f"""
+        <div class="empty-state">
+            <div class="es-icon">{icon}</div>
+            <div class="es-title">{title}</div>
+            <div class="es-desc">{desc}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+# ---------------------------------------------------------------------------
 # Состояние
 # ---------------------------------------------------------------------------
 
 def _init_state():
     defaults = {
         "td_uploaded_name": None,
-        "td_doc": None,                  # ExtractedDocument
-        "td_matches": [],                # list[TextMatch]
-        "td_results": {},                # {data_type: list[NormalizationCandidate]}
-        "td_selections": {},             # {data_type: {idx: bool}}
-        "td_canonicals": {},             # {data_type: {idx: str}}
+        "td_doc": None,
+        "td_matches": [],
+        "td_results": {},
+        "td_selections": {},
+        "td_canonicals": {},
         "td_applied": False,
         "td_output_bytes": None,
         "td_output_ext": None,
@@ -75,33 +130,58 @@ def _reset_after_upload(name: str):
 def run_text_document_mode():
     _init_state()
 
-    st.title("📄 Нормализация текстовых документов")
-    st.caption(
-        "Загрузите документ (txt, docx, md, rtf). Система найдёт в тексте ФИО, "
-        "адреса, ИНН, телефоны, email и названия организаций, предложит "
-        "канонические значения и соберёт документ обратно в исходном формате."
+    # Заголовок
+    st.markdown(
+        """
+        <div class="app-header">
+            <span class="logo-mark">📄</span>
+            <div>
+                <h1>Нормализация документов</h1>
+                <p class="subtitle">Поиск и нормализация PII в текстовых файлах</p>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
     )
 
+    # Определяем текущий шаг для степпера
+    td_step = 1
+    if st.session_state.get("td_doc") is not None:
+        td_step = 2
+    if st.session_state.get("td_results"):
+        td_step = 3
+    if st.session_state.get("td_applied"):
+        td_step = 4
+
+    _progress_stepper(td_step, ["Загрузка", "Поиск PII", "Кандидаты", "Экспорт"])
+
     # -------------------- Шаг 1. Загрузка --------------------
-    st.header("1. Загрузка документа")
+    _step_header(1, "Загрузка документа")
     uploaded = st.file_uploader(
         "Выберите файл",
         type=list(SUPPORTED_EXTENSIONS),
         accept_multiple_files=False,
         key="td_uploader",
+        label_visibility="collapsed",
+        help=f"Поддерживаемые форматы: {', '.join(SUPPORTED_EXTENSIONS)}",
     )
     if uploaded is None:
-        st.info("Загрузите документ, чтобы продолжить.")
+        _empty_state(
+            "📂",
+            "Файл не загружен",
+            f"Поддерживаются форматы: {', '.join(SUPPORTED_EXTENSIONS)}",
+        )
         return
 
     if st.session_state.td_uploaded_name != uploaded.name:
         _reset_after_upload(uploaded.name)
         try:
-            st.session_state.td_doc = extract_document(
-                uploaded.name, uploaded.getvalue()
-            )
-        except Exception as e:  # noqa: BLE001
-            st.error(f"Не удалось прочитать документ: {e}")
+            with st.spinner("Читаю документ…"):
+                st.session_state.td_doc = extract_document(
+                    uploaded.name, uploaded.getvalue()
+                )
+        except Exception as e:
+            st.error(f"❌ Не удалось прочитать документ: {e}")
             return
 
     doc = st.session_state.td_doc
@@ -109,22 +189,26 @@ def run_text_document_mode():
         return
 
     st.success(
-        f"Документ загружен: **{uploaded.name}** · формат: **{doc.fmt}** · "
-        f"фрагментов: **{len(doc.chunks)}** · символов: **{len(doc.full_text):,}**"
-        .replace(",", " ")
+        f"✅ **{uploaded.name}** · формат: **{doc.fmt}** · "
+        f"фрагментов: **{len(doc.chunks)}** · "
+        f"символов: **{len(doc.full_text):,}**".replace(",", " ")
     )
 
-    with st.expander("Превью первых 30 фрагментов"):
+    with st.expander("Превью первых 30 фрагментов", expanded=False):
         preview_rows = [
-            {"#": c.idx, "Тип": c.kind, "Текст": (c.text[:200] + "…") if len(c.text) > 200 else c.text}
+            {
+                "#": c.idx,
+                "Тип": c.kind,
+                "Текст": (c.text[:200] + "…") if len(c.text) > 200 else c.text,
+            }
             for c in doc.chunks[:30]
         ]
         st.dataframe(pd.DataFrame(preview_rows), use_container_width=True, hide_index=True)
 
     # -------------------- Шаг 2. Поиск PII --------------------
-    st.header("2. Поиск данных в тексте")
+    _step_header(2, "Поиск данных в тексте", "ФИО · адреса · ИНН · телефоны · email · организации")
 
-    if st.button("🔎 Найти данные", type="primary", key="td_scan"):
+    if st.button("🔎 Найти данные", type="primary", key="td_scan", use_container_width=True):
         with st.spinner("Ищу ФИО, адреса, ИНН, телефоны, email, организации…"):
             matches = scan_text_document(doc)
         st.session_state.td_matches = matches
@@ -134,12 +218,15 @@ def run_text_document_mode():
         st.session_state.td_applied = False
 
         groups = group_by_type(matches)
-        progress = st.progress(0.0)
+        progress = st.progress(0.0, text="Запускаю нормализаторы…")
         types = list(groups.keys())
         for i, dtype in enumerate(types, start=1):
-            with st.spinner(f"[{i}/{len(types)}] Алгоритм «{LABELS[dtype]}»…"):
-                normalizer = get_normalizer(dtype)
-                cands = normalizer.build_candidates(groups[dtype])
+            progress.progress(
+                i / max(len(types), 1),
+                text=f"[{i}/{len(types)}] {LABELS[dtype]}…",
+            )
+            normalizer = get_normalizer(dtype)
+            cands = normalizer.build_candidates(groups[dtype])
             st.session_state.td_results[dtype] = cands
             st.session_state.td_selections[dtype] = {
                 j: (len(c.variants) > 1) for j, c in enumerate(cands)
@@ -147,41 +234,52 @@ def run_text_document_mode():
             st.session_state.td_canonicals[dtype] = {
                 j: c.canonical for j, c in enumerate(cands)
             }
-            progress.progress(i / max(len(types), 1))
         progress.empty()
 
     matches = st.session_state.td_matches
     if not matches:
-        st.info("Нажмите «Найти данные», чтобы начать.")
+        _empty_state(
+            "🔎",
+            "Данные не найдены",
+            "Нажмите «Найти данные», чтобы запустить сканирование.",
+        )
         return
 
-    # Сводка по типам
+    # Метрики по типам
     groups = group_by_type(matches)
-    m_cols = st.columns(len(groups) or 1)
-    for col, (dtype, values) in zip(m_cols, groups.items()):
-        col.metric(LABELS[dtype], f"{len(values)} (уник: {len(set(values))})")
+    if groups:
+        m_cols = st.columns(min(len(groups), 4))
+        for col, (dtype, values) in zip(m_cols, groups.items()):
+            col.metric(LABELS[dtype], len(values), delta=f"{len(set(values))} уник.", delta_color="off")
 
-    # -------------------- Шаг 3. Кандидаты на объединение --------------------
+    # -------------------- Шаг 3. Кандидаты --------------------
     if not st.session_state.td_results:
         return
 
-    st.header("3. Кандидаты на объединение")
-    st.caption(
-        "По каждому типу показаны группы похожих значений. Отметьте, какие из "
-        "них стоит объединить к одному каноническому виду."
-    )
+    _step_header(3, "Кандидаты на объединение", "Отметьте группы для нормализации")
 
     tabs = st.tabs([f"{LABELS[dt]} · {len(cs)}" for dt, cs in st.session_state.td_results.items()])
     for tab, (dtype, candidates) in zip(tabs, st.session_state.td_results.items()):
         with tab:
             if not candidates:
-                st.warning("Алгоритм не нашёл кандидатов.")
+                _empty_state("🔎", "Кандидатов не найдено", "Алгоритм не нашёл групп для этого типа.")
                 continue
 
             multi = sum(1 for c in candidates if len(c.variants) > 1)
-            st.caption(
-                f"Всего групп: **{len(candidates)}** · с несколькими вариантами: **{multi}**."
-            )
+
+            col_a, col_b, col_c = st.columns([3, 1, 1])
+            with col_a:
+                st.caption(f"Групп: **{len(candidates)}** · с вариантами: **{multi}**")
+            with col_b:
+                if st.button("✓ Все", key=f"td_check::{dtype}", use_container_width=True):
+                    for i in range(len(candidates)):
+                        st.session_state.td_selections[dtype][i] = True
+                    st.rerun()
+            with col_c:
+                if st.button("✗ Сбросить", key=f"td_uncheck::{dtype}", use_container_width=True):
+                    for i in range(len(candidates)):
+                        st.session_state.td_selections[dtype][i] = False
+                    st.rerun()
 
             filter_mode = st.radio(
                 "Показывать:",
@@ -190,17 +288,6 @@ def run_text_document_mode():
                 index=0,
                 key=f"td_filter::{dtype}",
             )
-            b1, b2, _ = st.columns([1, 1, 4])
-            with b1:
-                if st.button("✓ Отметить все", key=f"td_check::{dtype}"):
-                    for i in range(len(candidates)):
-                        st.session_state.td_selections[dtype][i] = True
-                    st.rerun()
-            with b2:
-                if st.button("✗ Снять все", key=f"td_uncheck::{dtype}"):
-                    for i in range(len(candidates)):
-                        st.session_state.td_selections[dtype][i] = False
-                    st.rerun()
 
             rows = []
             for i, c in enumerate(candidates):
@@ -215,8 +302,9 @@ def run_text_document_mode():
                     "Встречается": c.count,
                     "Уверенность": round(c.confidence, 2),
                 })
+
             if not rows:
-                st.info("В этом режиме нет групп для отображения.")
+                _empty_state("🔎", "Нет групп в этом фильтре", "Переключитесь на «Все группы».")
                 continue
 
             editor_df = pd.DataFrame(rows)
@@ -241,10 +329,14 @@ def run_text_document_mode():
                 st.session_state.td_canonicals[dtype][idx] = str(row["Каноническое значение"])
 
     # -------------------- Шаг 4. Применение и экспорт --------------------
-    st.header("4. Применение и экспорт")
+    _step_header(4, "Применение и экспорт")
 
-    if st.button("🛠 Выполнить нормализацию документа", type="primary", key="td_apply"):
-        # Собираем mapping из одобренных групп.
+    if st.button(
+        "🛠 Выполнить нормализацию документа",
+        type="primary",
+        key="td_apply",
+        use_container_width=True,
+    ):
         mapping: dict[str, dict[str, str]] = {}
         groups_payload: dict[str, list] = {}
 
@@ -271,14 +363,12 @@ def run_text_document_mode():
             mapping[dtype] = m
             groups_payload[dtype] = applied_groups
 
-        # Применяем к документу
         replaced, changed = apply_replacements(doc, st.session_state.td_matches, mapping)
         out_bytes, out_ext = rebuild_document(doc, replaced)
 
         st.session_state.td_output_bytes = out_bytes
         st.session_state.td_output_ext = out_ext
 
-        # JSON-маппинг
         payload = {
             "meta": {
                 "source_file": st.session_state.td_uploaded_name,
@@ -287,12 +377,8 @@ def run_text_document_mode():
                 "total_matches": len(st.session_state.td_matches),
                 "total_values_changed": changed,
             },
-            "mapping": {
-                dtype: m for dtype, m in mapping.items() if m
-            },
-            "groups": {
-                dtype: g for dtype, g in groups_payload.items() if g
-            },
+            "mapping": {dtype: m for dtype, m in mapping.items() if m},
+            "groups": {dtype: g for dtype, g in groups_payload.items() if g},
         }
         st.session_state.td_mapping_payload = payload
         st.session_state.td_applied = True
@@ -300,7 +386,7 @@ def run_text_document_mode():
     if st.session_state.td_applied and st.session_state.td_output_bytes is not None:
         payload = st.session_state.td_mapping_payload
         st.success(
-            f"Готово. Заменено вхождений: **{payload['meta']['total_values_changed']}** "
+            f"✅ Готово. Заменено: **{payload['meta']['total_values_changed']}** вхождений "
             f"из **{payload['meta']['total_matches']}** найденных."
         )
 
