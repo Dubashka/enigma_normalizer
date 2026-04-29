@@ -35,25 +35,23 @@ from utils.text_scan import (
 
 
 # ---------------------------------------------------------------------------
-# UI-хелперы (аналог из app.py — переиспользуются локально)
+# UI-хелперы
 # ---------------------------------------------------------------------------
 
 def _step_header(num: int, title: str, hint: str = "") -> None:
     hint_html = f'<span class="step-hint">{hint}</span>' if hint else ""
     st.markdown(
-        f"""
-        <div class="step-header">
-            <span class="step-num">{num}</span>
-            <span class="step-title">{title}</span>
-            {hint_html}
-        </div>
-        """,
+        f'<div class="step-header">'
+        f'<span class="step-num">{num}</span>'
+        f'<span class="step-title">{title}</span>'
+        f'{hint_html}'
+        f'</div>',
         unsafe_allow_html=True,
     )
 
 
 def _progress_stepper(current_step: int, steps: list[str]) -> None:
-    items_html = ""
+    items = []
     for i, label in enumerate(steps, start=1):
         if i < current_step:
             cls = "done"
@@ -64,27 +62,23 @@ def _progress_stepper(current_step: int, steps: list[str]) -> None:
         else:
             cls = ""
             circle = str(i)
-        items_html += f"""
-            <div class="step-item {cls}">
-                <div class="step-circle">{circle}</div>
-                <div class="step-label">{label}</div>
-            </div>
-        """
-    st.markdown(
-        f'<div class="step-progress">{items_html}</div>',
-        unsafe_allow_html=True,
-    )
+        items.append(
+            f'<div class="step-item {cls}">'
+            f'<div class="step-circle">{circle}</div>'
+            f'<div class="step-label">{label}</div>'
+            f'</div>'
+        )
+    html = '<div class="step-progress">' + "".join(items) + "</div>"
+    st.markdown(html, unsafe_allow_html=True)
 
 
 def _empty_state(icon: str, title: str, desc: str) -> None:
     st.markdown(
-        f"""
-        <div class="empty-state">
-            <div class="es-icon">{icon}</div>
-            <div class="es-title">{title}</div>
-            <div class="es-desc">{desc}</div>
-        </div>
-        """,
+        f'<div class="empty-state">'
+        f'<div class="es-icon">{icon}</div>'
+        f'<div class="es-title">{title}</div>'
+        f'<div class="es-desc">{desc}</div>'
+        f'</div>',
         unsafe_allow_html=True,
     )
 
@@ -132,15 +126,13 @@ def run_text_document_mode():
 
     # Заголовок
     st.markdown(
-        """
-        <div class="app-header">
-            <span class="logo-mark">📄</span>
-            <div>
-                <h1>Нормализация документов</h1>
-                <p class="subtitle">Поиск и нормализация PII в текстовых файлах</p>
-            </div>
-        </div>
-        """,
+        '<div class="app-header">'
+        '<span class="logo-mark">📄</span>'
+        '<div>'
+        '<h1>Нормализация документов</h1>'
+        '<p class="subtitle">Поиск и нормализация PII в текстовых файлах</p>'
+        '</div>'
+        '</div>',
         unsafe_allow_html=True,
     )
 
