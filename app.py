@@ -744,9 +744,7 @@ if uploaded is not None:
         with st.spinner("Читаю файл…"):
             st.session_state.sheets_data = _read_excel(uploaded.getvalue())
     sheet_count = len(st.session_state.sheets_data)
-    st.success(
-        f"✅ **{uploaded.name}** — {sheet_count} {'лист' if sheet_count == 1 else 'листа' if sheet_count < 5 else 'листов'}"
-    )
+
 
 if not st.session_state.sheets_data:
     _empty_state(
@@ -905,7 +903,7 @@ if mode == "🔍 Поиск аномалий":
 # Режим: Нормализация
 # ---------------------------------------------------------------------------
 
-_step_header(2, "Выбор листов", "Система автоматически распознаёт колонки")
+_step_header(2, "Выбор листов и настройка", "Система автоматически распознаёт колонки")
 
 all_sheets = list(st.session_state.sheets_data.keys())
 selected_sheets = st.multiselect(
@@ -938,29 +936,14 @@ for sh in selected_sheets:
         with st.spinner(f"Анализирую колонки листа «{sh}»…"):
             _scan_sheet(sh, st.session_state.sheets_data[sh])
 
-rescan_col1, rescan_col2 = st.columns([5, 1])
-with rescan_col1:
-    st.caption(
-        f"Выбрано листов: **{len(selected_sheets)}**. "
-        "Галочки и типы выставлены автоматически — можно скорректировать ниже."
-    )
-with rescan_col2:
-    if st.button(
-        "↻ Пересканировать",
-        help="Сбросить правки и выставить галочки по автодетекту",
-        use_container_width=True,
-    ):
-        for sh in selected_sheets:
-            st.session_state.col_selected_by_sheet[sh] = {}
-            st.session_state.col_type_overrides_by_sheet[sh] = {}
-            _scan_sheet(sh, st.session_state.sheets_data[sh])
-        st.rerun()
-
+st.caption(
+    f"Выбрано листов: **{len(selected_sheets)}**. "
+    "Галочки и типы выставлены автоматически — можно скорректировать ниже."
+)
 
 # ---------------------------------------------------------------------------
 # Шаг 3. Настройка по листам
 # ---------------------------------------------------------------------------
-_step_header(3, "Настройка по листам", "Проверьте колонки и типы алгоритмов")
 
 type_options_with_auto = ["(авто)"] + list(REGISTRY.keys())
 sheet_tabs = st.tabs([f"📋 {sh}" for sh in selected_sheets])
@@ -1090,7 +1073,7 @@ if total_cols == 0:
 if missing:
     st.warning(
         "⚠️ Не определён тип для: "
-        + ", ".join(f"`{sh} → {c}`" for sh, c in missing)
+        + ", ".join(f"`{c}`" for sh, c in missing)
         + ". Переопределите тип вручную."
     )
 
@@ -1098,7 +1081,7 @@ if missing:
 # ---------------------------------------------------------------------------
 # Шаг 4. Запуск алгоритмов
 # ---------------------------------------------------------------------------
-_step_header(4, "Запуск алгоритмов", f"{total_cols} колонок · {len(selected_sheets)} листов")
+_step_header(3, "Запуск алгоритмов", f"{total_cols} колонок · {len(selected_sheets)} листов")
 
 run_disabled = bool(missing)
 run_clicked = st.button(
@@ -1156,7 +1139,7 @@ if run_clicked:
 has_any_results = any(st.session_state.results_by_sheet.get(sh) for sh in selected_sheets)
 
 if has_any_results:
-    _step_header(5, "Кандидаты на объединение", "Отметьте группы для нормализации")
+    _step_header(4, "Кандидаты на объединение", "Отметьте группы для нормализации")
 
     sheets_with_res = [sh for sh in selected_sheets if st.session_state.results_by_sheet.get(sh)]
     res_sheet_tabs = st.tabs([f"📋 {sh}" for sh in sheets_with_res])
@@ -1170,7 +1153,7 @@ if has_any_results:
                 continue
 
             col_tab_labels = [
-                f"{c} · {LABELS[_effective_type(sh, c)]}" for c in processed_cols
+                f"{c}" for c in processed_cols
             ]
             col_tabs = st.tabs(col_tab_labels)
 
@@ -1186,21 +1169,8 @@ if has_any_results:
                         continue
 
                     multi = sum(1 for c in candidates if len(c.variants) > 1)
-                    col_a, col_b, col_c = st.columns([3, 1, 1])
-                    with col_a:
-                        st.caption(
-                            f"Групп: **{len(candidates)}** · с вариантами: **{multi}**"
-                        )
-                    with col_b:
-                        if st.button("✓ Все", key=f"check_all::{sh}::{col}", use_container_width=True):
-                            for i in range(len(candidates)):
-                                st.session_state.selections_by_sheet[sh][col][i] = True
-                            st.rerun()
-                    with col_c:
-                        if st.button("✗ Сбросить", key=f"uncheck_all::{sh}::{col}", use_container_width=True):
-                            for i in range(len(candidates)):
-                                st.session_state.selections_by_sheet[sh][col][i] = False
-                            st.rerun()
+
+                    st.caption(f"Групп: **{len(candidates)}** · с вариантами: **{multi}**")
 
                     filter_mode = st.radio(
                         "Показывать:",
@@ -1260,7 +1230,7 @@ if has_any_results:
 # Шаг 6. Применение и экспорт
 # ---------------------------------------------------------------------------
 if has_any_results:
-    _step_header(6, "Применение и экспорт")
+    _step_header(5, "Применение и экспорт")
 
     apply_clicked = st.button(
         "🛠 Выполнить нормализацию по всем выбранным листам",
