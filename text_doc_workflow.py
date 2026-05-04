@@ -233,31 +233,11 @@ def run_text_document_mode():
 
             multi = sum(1 for c in candidates if len(c.variants) > 1)
 
-            col_a, col_b, col_c = st.columns([3, 1, 1])
-            with col_a:
-                st.caption(f"Групп: **{len(candidates)}** · с вариантами: **{multi}**")
-            with col_b:
-                if st.button("✓ Все", key=f"td_check::{dtype}", use_container_width=True):
-                    for i in range(len(candidates)):
-                        st.session_state.td_selections[dtype][i] = True
-                    st.rerun()
-            with col_c:
-                if st.button("✗ Сбросить", key=f"td_uncheck::{dtype}", use_container_width=True):
-                    for i in range(len(candidates)):
-                        st.session_state.td_selections[dtype][i] = False
-                    st.rerun()
-
-            filter_mode = st.radio(
-                "Показывать:",
-                options=["Только группы с вариантами", "Все группы"],
-                horizontal=True,
-                index=0,
-                key=f"td_filter::{dtype}",
-            )
+            st.caption(f"Групп: **{len(candidates)}** · с вариантами: **{multi}**")
 
             rows = []
             for i, c in enumerate(candidates):
-                if filter_mode == "Только группы с вариантами" and len(c.variants) <= 1:
+                if len(c.variants) <= 1:
                     continue
                 rows.append({
                     "id": i,
@@ -270,7 +250,7 @@ def run_text_document_mode():
                 })
 
             if not rows:
-                _empty_state("🔎", "Нет групп в этом фильтре", "Переключитесь на «Все группы».")
+                _empty_state("🔎", "Нет групп с вариантами", "Все найденные группы содержат только одно написание.")
                 continue
 
             editor_df = pd.DataFrame(rows)
