@@ -754,7 +754,7 @@ with st.sidebar:
         'Данные хранятся только в текущей сессии.'
         '</div>'
         '<div class="sidebar-section">'
-        '<h4>Поддерживаемые типы</h4>'
+        '<h4>Поддерживаемые типы данных для нормализации</h4>'
         '<ul>'
         '<li>ФИО</li>'
         '<li>Организации</li>'
@@ -795,7 +795,7 @@ def _current_step() -> int:
     return 5
 
 
-_STEPS_NORM = ["Загрузка", "Настрока", "Первичный поиск", "Верификация", "Нормализация"]
+_STEPS_NORM = ["Загрузка", "Выбор листов и колонок", "Первичный поиск", "Верификация", "Нормализация"]
 _STEPS_ANOM = ["Загрузка", "Настрока", "Результат"]
 
 if mode == "Поиск аномалий":
@@ -811,7 +811,7 @@ else:
 # ---------------------------------------------------------------------------
 # Шаг 1. Загрузка файла
 # ---------------------------------------------------------------------------
-_step_header(1, "Загрузка Excel-файла","Загрузите свой excel файл")
+_step_header(1, "Загрузка Excel-файла")
 
 uploaded = st.file_uploader(
     "Выберите .xlsx файл",
@@ -987,7 +987,7 @@ if mode == "Поиск аномалий":
 # Режим: Нормализация
 # ---------------------------------------------------------------------------
 
-_step_header(2, "Настройка листов и колонок", "Система автоматически распознаёт листы и колонки для нормализации, но вы можете скорректировать список")
+_step_header(2, "Выбор листов и колонок", "Система автоматически распознаёт листы и колонки для нормализации, но вы можете скорректировать список")
 
 all_sheets = list(st.session_state.sheets_data.keys())
 selected_sheets = st.multiselect(
@@ -1048,7 +1048,7 @@ for tab, sh in zip(sheet_tabs, selected_sheets):
                 type_choice = f"(авто: {LABELS[s.detected_type]})" if s.detected_type else "(не определено)"
 
             scan_rows.append({
-                "Включить": st.session_state.col_selected_by_sheet[sh].get(s.column, s.recommended),
+                "Рекомендовано": st.session_state.col_selected_by_sheet[sh].get(s.column, s.recommended),
                 "Колонка": s.column,
                 "Уверенность": f"{s.confidence:.0%}" if s.detected_type else "—",
                 "Тип данных": type_choice,
@@ -1072,10 +1072,10 @@ for tab, sh in zip(sheet_tabs, selected_sheets):
             scan_df,
             use_container_width=True,
             hide_index=True,
-            column_order=["Включить", "Колонка", "Тип данных", "Уверенность"],
+            column_order=["Рекомендовано", "Колонка", "Тип данных", "Уверенность"],
             disabled=["Колонка", "Уверенность"],
             column_config={
-                "Включить": st.column_config.CheckboxColumn("Включить", width="small"),
+                "Рекомендовано": st.column_config.CheckboxColumn("Рекомендовано", width="small"),
                 "Колонка": st.column_config.TextColumn("Колонка", width="medium"),
                 "Уверенность": st.column_config.TextColumn("Уверенность", width="small"),
                 "Тип данных": st.column_config.SelectboxColumn(
@@ -1092,7 +1092,7 @@ for tab, sh in zip(sheet_tabs, selected_sheets):
 
         for _, row in edited_scan.iterrows():
             col_name = str(row["Колонка"])
-            st.session_state.col_selected_by_sheet[sh][col_name] = bool(row["Включить"])
+            st.session_state.col_selected_by_sheet[sh][col_name] = bool(row["Рекомендовано"])
 
             chosen_label = str(row["Тип данных"]) if not isinstance(row["Тип данных"], float) else ""
             if chosen_label.startswith("(авто:") or chosen_label in ("(не определено)", ""):
@@ -1135,7 +1135,7 @@ if missing:
 # ---------------------------------------------------------------------------
 # Шаг 4. Запуск алгоритмов
 # ---------------------------------------------------------------------------
-_step_header(3, "Первичный поиск групп данных для нормализации", "Запустите поиск")
+_step_header(3, "Первичный поиск данных для нормализации", "Запустите поиск")
 
 run_disabled = bool(missing)
 run_clicked = st.button(

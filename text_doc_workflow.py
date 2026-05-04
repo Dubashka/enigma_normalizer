@@ -138,7 +138,7 @@ def run_text_document_mode():
     _progress_stepper(td_step, ["Загрузка", "Первичный поиск", "Верификация", "Нормализация"])
 
     # -------------------- Шаг 1. Загрузка --------------------
-    _step_header(1, "Загрузка документа", "Загрузите свой файл")
+    _step_header(1, "Загрузка документа")
     uploaded = st.file_uploader(
         "Выберите файл",
         type=list(SUPPORTED_EXTENSIONS),
@@ -172,7 +172,7 @@ def run_text_document_mode():
 
 
     # -------------------- Шаг 2. Поиск PII --------------------
-    _step_header(2, "Первичный поиск групп данных для нормализации", "Запустите поиск")
+    _step_header(2, "Первичный поиск данных для нормализации", "Запустите поиск")
 
     if st.button("Найти данные", type="primary", key="td_scan", use_container_width=True):
         with st.spinner("Ищу ФИО, адреса, ИНН, телефоны, email, организации…"):
