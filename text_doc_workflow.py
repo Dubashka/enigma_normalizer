@@ -135,10 +135,10 @@ def run_text_document_mode():
     if st.session_state.get("td_applied"):
         td_step = 4
 
-    _progress_stepper(td_step, ["Загрузка", "Поиск PII", "Кандидаты", "Экспорт"])
+    _progress_stepper(td_step, ["Загрузка", "Первичный поиск", "Верификация", "Нормализация"])
 
     # -------------------- Шаг 1. Загрузка --------------------
-    _step_header(1, "Загрузка документа")
+    _step_header(1, "Загрузка документа", "Загрузите свой файл")
     uploaded = st.file_uploader(
         "Выберите файл",
         type=list(SUPPORTED_EXTENSIONS),
@@ -170,27 +170,11 @@ def run_text_document_mode():
     if doc is None:
         return
 
-    st.success(
-        f"✅ **{uploaded.name}** · формат: **{doc.fmt}** · "
-        f"фрагментов: **{len(doc.chunks)}** · "
-        f"символов: **{len(doc.full_text):,}**".replace(",", " ")
-    )
-
-    with st.expander("Превью первых 30 фрагментов", expanded=False):
-        preview_rows = [
-            {
-                "#": c.idx,
-                "Тип": c.kind,
-                "Текст": (c.text[:200] + "…") if len(c.text) > 200 else c.text,
-            }
-            for c in doc.chunks[:30]
-        ]
-        st.dataframe(pd.DataFrame(preview_rows), use_container_width=True, hide_index=True)
 
     # -------------------- Шаг 2. Поиск PII --------------------
-    _step_header(2, "Поиск данных в тексте", "ФИО · адреса · ИНН · телефоны · email · организации")
+    _step_header(2, "Первичный поиск групп данных для нормализации", "Запустите поиск")
 
-    if st.button("🔎 Найти данные", type="primary", key="td_scan", use_container_width=True):
+    if st.button("Найти данные", type="primary", key="td_scan", use_container_width=True):
         with st.spinner("Ищу ФИО, адреса, ИНН, телефоны, email, организации…"):
             matches = scan_text_document(doc)
         st.session_state.td_matches = matches
@@ -238,7 +222,7 @@ def run_text_document_mode():
     if not st.session_state.td_results:
         return
 
-    _step_header(3, "Кандидаты на объединение", "Отметьте группы для нормализации")
+    _step_header(3, "Верификация", "Отметьте группы для нормализации")
 
     tabs = st.tabs([f"{LABELS[dt]} · {len(cs)}" for dt, cs in st.session_state.td_results.items()])
     for tab, (dtype, candidates) in zip(tabs, st.session_state.td_results.items()):
@@ -311,7 +295,7 @@ def run_text_document_mode():
                 st.session_state.td_canonicals[dtype][idx] = str(row["Каноническое значение"])
 
     # -------------------- Шаг 4. Применение и экспорт --------------------
-    _step_header(4, "Применение и экспорт")
+    _step_header(4, "Нормализация")
 
     if st.button(
         "🛠 Выполнить нормализацию документа",
