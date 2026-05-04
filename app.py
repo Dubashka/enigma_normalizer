@@ -15,6 +15,7 @@
 """
 from __future__ import annotations
 
+import csv as csv_module
 import io
 import json
 from datetime import datetime
@@ -621,19 +622,71 @@ def _read_excel(file_bytes: bytes) -> dict[str, pd.DataFrame]:
 
 @st.cache_data(show_spinner=False)
 def _read_csv(file_bytes: bytes) -> dict[str, pd.DataFrame]:
-    """Читаем CSV-файл, автоматически определяя разделитель (запятая или точка с запятой)."""
-    # Пробуем определить разделитель по содержимому файла
+    """Читаем CSV-файл с автоопределением разделителя и устойчивой обработкой кавычек.
+
+    Стратегия (от строгой к мягкой):
+    1. C-движок (быстрый) с on_bad_lines="skip" — пропускает битые строки.
+    2. Python-движок с quoting=QUOTE_NONE — игнорирует кавычки целиком.
+    3. Python-движок с quoting=QUOTE_NONE + escapechar='\\' — для файлов с экранированием.
+    Перебираем кодировки: utf-8-sig → utf-8 → cp1251 → latin-1.
+    """
+    # Определяем разделитель по первым 4 КБ файла
     sample = file_bytes[:4096].decode("utf-8-sig", errors="replace")
     sep = ";" if sample.count(";") >= sample.count(",") else ","
-    for encoding in ("utf-8-sig", "utf-8", "cp1251", "latin-1"):
+
+    encodings = ("utf-8-sig", "utf-8", "cp1251", "latin-1")
+
+    # Попытка 1: C-движок, пропуск битых строк
+    for encoding in encodings:
         try:
-            df = pd.read_csv(io.BytesIO(file_bytes), sep=sep, dtype=object, encoding=encoding)
+            df = pd.read_csv(
+                io.BytesIO(file_bytes),
+                sep=sep,
+                dtype=object,
+                encoding=encoding,
+                on_bad_lines="skip",
+            )
             return {"Sheet1": df}
         except Exception:
             continue
-    # Последняя попытка с движком Python (более гибкий парсинг)
-    df = pd.read_csv(io.BytesIO(file_bytes), sep=sep, dtype=object, encoding="utf-8", engine="python")
-    return {"Sheet1": df}
+
+    # Попытка 2: Python-движок, кавычки отключены (QUOTE_NONE)
+    for encoding in encodings:
+        try:
+            df = pd.read_csv(
+                io.BytesIO(file_bytes),
+                sep=sep,
+                dtype=object,
+                encoding=encoding,
+                engine="python",
+                quoting=csv_module.QUOTE_NONE,
+                on_bad_lines="skip",
+            )
+            return {"Sheet1": df}
+        except Exception:
+            continue
+
+    # Попытка 3: Python-движок, QUOTE_NONE + escapechar
+    for encoding in encodings:
+        try:
+            df = pd.read_csv(
+                io.BytesIO(file_bytes),
+                sep=sep,
+                dtype=object,
+                encoding=encoding,
+                engine="python",
+                quoting=csv_module.QUOTE_NONE,
+                escapechar="\\",
+                on_bad_lines="skip",
+            )
+            return {"Sheet1": df}
+        except Exception:
+            continue
+
+    raise ValueError(
+        "Не удалось прочитать CSV-файл. "
+        "Проверьте формат файла, кодировку и корректность кавычек."
+    )
 
 
 def _reset_after_upload():
