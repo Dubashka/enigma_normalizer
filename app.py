@@ -655,9 +655,9 @@ with st.sidebar:
     mode = st.radio(
         "Режим",
         options=[
-            "🧪 Нормализация",
-            "🔍 Поиск аномалий",
-            "📄 Нормализация документов",
+            "Нормализация Excel",
+            "Нормализация документов",
+            "Поиск аномалий",
         ],
         key="app_mode",
         label_visibility="collapsed",
@@ -672,19 +672,19 @@ with st.sidebar:
         '<div class="sidebar-section">'
         '<h4>Поддерживаемые типы</h4>'
         '<ul>'
-        '<li>🧑 ФИО</li>'
-        '<li>🏢 Организации</li>'
-        '<li>📍 Адреса</li>'
-        '<li>📞 Телефоны</li>'
-        '<li>🪪 ИНН</li>'
-        '<li>✉️ Email</li>'
-        '<li>📝 Текстовые значения</li>'
+        '<li>ФИО</li>'
+        '<li>Организации</li>'
+        '<li>Адреса</li>'
+        '<li>Телефоны</li>'
+        '<li>ИНН</li>'
+        '<li>Email</li>'
+        '<li>Текстовые значения</li>'
         '</ul>'
         '</div>',
         unsafe_allow_html=True,
     )
 
-if mode == "📄 Нормализация документов":
+if mode == "Нормализация документов":
     from text_doc_workflow import run_text_document_mode
     run_text_document_mode()
     st.stop()
@@ -703,7 +703,7 @@ def _current_step() -> int:
         return 2
     has_results = any(st.session_state.results_by_sheet.get(sh) for sh in st.session_state.sheets)
     if not has_results:
-        if mode == "🔍 Поиск аномалий":
+        if mode == "Поиск аномалий":
             return 3
         return 3
     if not st.session_state.applied:
@@ -711,10 +711,10 @@ def _current_step() -> int:
     return 5
 
 
-_STEPS_NORM = ["Загрузка", "Листы", "Настройка", "Запуск", "Результат"]
-_STEPS_ANOM = ["Загрузка", "Параметры", "Результат"]
+_STEPS_NORM = ["Загрузка", "Настрока", "Первичный поиск", "Верификация", "Нормализация"]
+_STEPS_ANOM = ["Загрузка", "Настрока", "Результат"]
 
-if mode == "🔍 Поиск аномалий":
+if mode == "Поиск аномалий":
     anom_step = 1 if not st.session_state.sheets_data else 2
     all_anom = st.session_state.get(f"anomaly_results::{st.session_state.uploaded_name}")
     if all_anom:
@@ -727,7 +727,7 @@ else:
 # ---------------------------------------------------------------------------
 # Шаг 1. Загрузка файла
 # ---------------------------------------------------------------------------
-_step_header(1, "Загрузка Excel-файла")
+_step_header(1, "Загрузка Excel-файла","Загрузите свой excel файл")
 
 uploaded = st.file_uploader(
     "Выберите .xlsx файл",
@@ -758,7 +758,7 @@ if not st.session_state.sheets_data:
 # ---------------------------------------------------------------------------
 # Режим: Поиск аномалий
 # ---------------------------------------------------------------------------
-if mode == "🔍 Поиск аномалий":
+if mode == "Поиск аномалий":
     _step_header(2, "Параметры проверки")
     st.caption(
         "Сканирование на пустые строки, дубликаты, нетипичные значения "
@@ -903,7 +903,7 @@ if mode == "🔍 Поиск аномалий":
 # Режим: Нормализация
 # ---------------------------------------------------------------------------
 
-_step_header(2, "Выбор листов и настройка", "Система автоматически распознаёт колонки")
+_step_header(2, "Настройка листов и колонок", "Система автоматически распознаёт листы и колонки для нормализации, но вы можете скорректировать список")
 
 all_sheets = list(st.session_state.sheets_data.keys())
 selected_sheets = st.multiselect(
@@ -937,8 +937,7 @@ for sh in selected_sheets:
             _scan_sheet(sh, st.session_state.sheets_data[sh])
 
 st.caption(
-    f"Выбрано листов: **{len(selected_sheets)}**. "
-    "Галочки и типы выставлены автоматически — можно скорректировать ниже."
+    f""
 )
 
 # ---------------------------------------------------------------------------
@@ -954,8 +953,7 @@ for tab, sh in zip(sheet_tabs, selected_sheets):
         scans = st.session_state.scans_by_sheet.get(sh, [])
         recommended_cnt = sum(1 for s in scans if s.recommended)
         st.caption(
-            f"Колонок: **{len(scans)}** · рекомендовано: **{recommended_cnt}** · "
-            f"строк: **{len(df_sh):,}**".replace(",", " ")
+            f"Всего колонок: **{len(scans)}**; Рекомендовано для нормализации: **{recommended_cnt}** · "
         )
 
         scan_rows = []
