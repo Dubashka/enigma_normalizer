@@ -343,7 +343,7 @@ def _inject_css():
         /* ---- Скрыть якорные ссылки ---- */
         h1 a, h2 a, h3 a { display: none !important; }
 
-        /* ---- Кнопки скачивания ---- */
+        /* ---- Кнопки скачивания (по умолчанию — с красной рамкой) ---- */
         [data-testid="stDownloadButton"] button {
             border: 1px solid var(--primary) !important;
             color: var(--primary) !important;
@@ -354,6 +354,24 @@ def _inject_css():
         [data-testid="stDownloadButton"] button:hover {
             background: var(--primary) !important;
             color: #fff !important;
+        }
+
+        /* ---- Кнопка скачивания нормализованного Excel — красная (filled) ---- */
+        [data-testid="stDownloadButton"][key="dl_normalized_excel"] button,
+        div[data-testid="stDownloadButton"]:has(> button[data-testid="baseButton-download"]:first-child) ~ * button {
+            background: var(--primary) !important;
+            color: #fff !important;
+            border-color: var(--primary) !important;
+        }
+        div[data-testid="stDownloadButton"]:has(button[aria-label*="normalized"]) button,
+        [data-testid="stDownloadButton"].download-primary button {
+            background: var(--primary) !important;
+            color: #fff !important;
+            border-color: var(--primary) !important;
+        }
+        [data-testid="stDownloadButton"].download-primary button:hover {
+            background: var(--primary-hover) !important;
+            border-color: var(--primary-hover) !important;
         }
 
         /* ---- Кнопка «primary» ---- */
@@ -448,6 +466,33 @@ def _inject_css():
             if (document.readyState !== 'loading') {
                 mo.observe(document.body, { childList: true, subtree: true });
                 attachObserver();
+            }
+        })();
+
+        // Применяем красный стиль к кнопке скачивания нормализованного Excel по ключу
+        (function applyRedDownloadBtn() {
+            function styleBtn() {
+                var containers = document.querySelectorAll('[data-testid="stDownloadButton"]');
+                containers.forEach(function(c) {
+                    if (c.getAttribute('key') === 'dl_normalized_excel' ||
+                        c.querySelector('button') && c.querySelector('button').innerText.includes('нормализованный')) {
+                        var btn = c.querySelector('button');
+                        if (btn) {
+                            btn.style.setProperty('background', '#CF0522', 'important');
+                            btn.style.setProperty('color', '#fff', 'important');
+                            btn.style.setProperty('border-color', '#CF0522', 'important');
+                        }
+                    }
+                });
+            }
+            var mo2 = new MutationObserver(styleBtn);
+            document.addEventListener('DOMContentLoaded', function() {
+                mo2.observe(document.body, { childList: true, subtree: true });
+                styleBtn();
+            });
+            if (document.readyState !== 'loading') {
+                mo2.observe(document.body, { childList: true, subtree: true });
+                styleBtn();
             }
         })();
         </script>
@@ -1366,6 +1411,7 @@ if has_any_results:
                 file_name=f"{base_name}__normalized.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 use_container_width=True,
+                key="dl_normalized_excel",
             )
         with col_dl_2:
             mapping_xlsx = _build_mapping_excel(payload)
@@ -1374,4 +1420,6 @@ if has_any_results:
                 data=mapping_xlsx,
                 file_name=f"{base_name}__mapping.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            ) 
+                use_container_width=True,
+                key="dl_mapping_excel",
+            )
