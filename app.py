@@ -19,6 +19,8 @@ import io
 import json
 from datetime import datetime
 from pathlib import Path
+from openpyxl import Workbook
+from openpyxl.styles import Font, PatternFill, Alignment
 
 import pandas as pd
 import streamlit as st
@@ -638,6 +640,43 @@ def _run_for_column(df: pd.DataFrame, col: str, data_type: str) -> list[Normaliz
     return normalizer.build_candidates(values)
 
 
+def _build_mapping_excel(payload: dict) -> bytes:
+    wb = Workbook()
+    wb.remove(wb.active)  # удаляем дефолтный лист
+
+    header_font = Font(bold=True, color="FFFFFF")
+    header_fill = PatternFill("solid", fgColor="2E75B6")
+
+    for sh_name, sh_data in payload["sheets"].items():
+        ws = wb.create_sheet(title=sh_name[:31])  # Excel: макс 31 символ
+        # Заголовки
+        headers = ["Колонка", "Тип данных", "Каноническое значение", "Варианты", "Кол-во вхождений", "Уверенность"]
+        for col_idx, h in enumerate(headers, 1):
+            cell = ws.cell(row=1, column=col_idx, value=h)
+            cell.font = header_font
+            cell.fill = header_fill
+            cell.alignment = Alignment(horizontal="center")
+
+        row_idx = 2
+        for col_name, col_data in sh_data["per_column"].items():
+            for group in col_data.get("groups", []):
+                ws.cell(row=row_idx, column=1, value=col_name)
+                ws.cell(row=row_idx, column=2, value=col_data.get("data_type_label", ""))
+                ws.cell(row=row_idx, column=3, value=group["canonical"])
+                ws.cell(row=row_idx, column=4, value=" | ".join(group["variants"]))
+                ws.cell(row=row_idx, column=5, value=group["count"])
+                ws.cell(row=row_idx, column=6, value=group["confidence"])
+                row_idx += 1
+
+        # Авторасширение колонок
+        for col_cells in ws.columns:
+            length = max((len(str(c.value or "")) for c in col_cells), default=10)
+            ws.column_dimensions[col_cells[0].column_letter].width = min(length + 4, 60)
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
 # ---------------------------------------------------------------------------
 # Шапка приложения
 # ---------------------------------------------------------------------------
@@ -1024,8 +1063,8 @@ for tab, sh in zip(sheet_tabs, selected_sheets):
             )
             continue
 
-        with st.expander(f"Превью данных ({len(cols_sh)} колонок, первые 10 строк)", expanded=False):
-            st.dataframe(df_sh[cols_sh].head(10), use_container_width=True, hide_index=True)
+        with st.expander(f"Превью листа (все {len(df_sh.columns)} колонок, первые 10 строк)", expanded=False):
+            st.dataframe(df_sh.head(10), use_container_width=True, hide_index=True)
 
 # ← здесь нет отступа, это уже вне цикла for tab, sh in zip(...)
 per_sheet_cols: dict[str, list[str]] = {sh: _selected_columns(sh) for sh in selected_sheets}
@@ -1142,17 +1181,9 @@ if has_any_results:
 
                     st.caption(f"Групп: **{len(candidates)}** · с вариантами: **{multi}**")
 
-                    filter_mode = st.radio(
-                        "Показывать:",
-                        options=["Только группы с вариантами", "Все группы"],
-                        horizontal=True,
-                        index=0,
-                        key=f"filter::{sh}::{col}",
-                    )
-
                     rows = []
                     for i, c in enumerate(candidates):
-                        if filter_mode == "Только группы с вариантами" and len(c.variants) <= 1:
+                        if len(c.variants) <= 1:
                             continue
                         rows.append({
                             "id": i,
@@ -1167,8 +1198,8 @@ if has_any_results:
                     if not rows:
                         _empty_state(
                             "🔎",
-                            "Нет групп в этом фильтре",
-                            "Переключитесь на «Все группы».",
+                            "Нет групп с вариантами",
+                            "В этой колонке все значения уже уникальны или отсутствуют дубли.",
                         )
                         continue
 
@@ -1327,7 +1358,7 @@ if has_any_results:
             Path(st.session_state.uploaded_name).stem
             if st.session_state.uploaded_name else "normalized"
         )
-        col_dl_1, col_dl_2 = st.columns(2)
+        col_dl_1, col_dl_2 = st.columns([1, 1])
         with col_dl_1:
             st.download_button(
                 "⬇ Скачать нормализованный Excel",
@@ -1337,11 +1368,10 @@ if has_any_results:
                 use_container_width=True,
             )
         with col_dl_2:
-            mapping_bytes = json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8")
+            mapping_xlsx = _build_mapping_excel(payload)
             st.download_button(
-                "⬇ Скачать JSON-справочник маппингов",
-                data=mapping_bytes,
-                file_name=f"{base_name}__mapping.json",
-                mime="application/json",
-                use_container_width=True,
-            )
+                "⬇ Скачать Excel-справочник маппингов",
+                data=mapping_xlsx,
+                file_name=f"{base_name}__mapping.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            ) 
