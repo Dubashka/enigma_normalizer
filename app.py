@@ -655,9 +655,9 @@ with st.sidebar:
     mode = st.radio(
         "Режим",
         options=[
-            "🧪 Нормализация excel",
-            "📄 Нормализация документов",
+            "🧪 Нормализация",
             "🔍 Поиск аномалий",
+            "📄 Нормализация документов",
         ],
         key="app_mode",
         label_visibility="collapsed",
