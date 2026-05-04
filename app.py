@@ -943,7 +943,6 @@ st.caption(
 # ---------------------------------------------------------------------------
 # Шаг 3. Настройка по листам
 # ---------------------------------------------------------------------------
-
 type_options_with_auto = ["(авто)"] + list(REGISTRY.keys())
 sheet_tabs = st.tabs([f"📋 {sh}" for sh in selected_sheets])
 
@@ -958,23 +957,18 @@ for tab, sh in zip(sheet_tabs, selected_sheets):
 
         scan_rows = []
         for s in scans:
-            type_label = LABELS.get(s.detected_type, "—") if s.detected_type else "— не распознано"
-            if s.detected_type:
-                if s.confidence >= 0.75:
-                    badge = "✔ высокая"
-                elif s.confidence >= 0.5:
-                    badge = "~ средняя"
-                else:
-                    badge = "? низкая"
+            current_override = st.session_state.col_type_overrides_by_sheet[sh].get(s.column)
+            if current_override:
+                type_choice = LABELS.get(current_override, current_override)
             else:
-                badge = "—"
+                type_choice = f"(авто: {LABELS[s.detected_type]})" if s.detected_type else "(не определено)"
+
             scan_rows.append({
                 "Включить": st.session_state.col_selected_by_sheet[sh].get(s.column, s.recommended),
                 "Колонка": s.column,
-                "Распознанный тип": type_label,
                 "Уверенность": f"{s.confidence:.0%}" if s.detected_type else "—",
-                "Оценка": badge,
-                "Непустых": s.non_empty,
+                "Тип данных": type_choice,
+                "_detected_type": s.detected_type or "",
             })
 
         if not scan_rows:
@@ -982,23 +976,45 @@ for tab, sh in zip(sheet_tabs, selected_sheets):
             continue
 
         scan_df = pd.DataFrame(scan_rows)
+
+        auto_options = [
+            f"(авто: {LABELS[s.detected_type]})" if s.detected_type else "(не определено)"
+            for s in scans
+        ]
+        manual_options = [LABELS[k] for k in REGISTRY.keys()]
+        all_type_options = list(dict.fromkeys(auto_options + manual_options))
+
         edited_scan = st.data_editor(
             scan_df,
             use_container_width=True,
             hide_index=True,
-            disabled=["Колонка", "Распознанный тип", "Уверенность", "Оценка", "Непустых"],
+            column_order=["Включить", "Колонка", "Тип данных", "Уверенность"],
+            disabled=["Колонка", "Уверенность"],
             column_config={
                 "Включить": st.column_config.CheckboxColumn("Включить", width="small"),
                 "Колонка": st.column_config.TextColumn("Колонка", width="medium"),
-                "Распознанный тип": st.column_config.TextColumn("Тип", width="medium"),
                 "Уверенность": st.column_config.TextColumn("Уверенность", width="small"),
-                "Оценка": st.column_config.TextColumn("Оценка", width="small"),
-                "Непустых": st.column_config.NumberColumn("Непустых", width="small"),
+                "Тип данных": st.column_config.SelectboxColumn(
+                    "Тип данных",
+                    options=all_type_options,
+                    width="large",
+                    required=True,
+                ),
             },
             key=f"scan_editor::{sh}",
         )
+
+        label_to_key = {v: k for k, v in LABELS.items()}
+
         for _, row in edited_scan.iterrows():
-            st.session_state.col_selected_by_sheet[sh][str(row["Колонка"])] = bool(row["Включить"])
+            col_name = str(row["Колонка"])
+            st.session_state.col_selected_by_sheet[sh][col_name] = bool(row["Включить"])
+
+            chosen_label = str(row["Тип данных"]) if not isinstance(row["Тип данных"], float) else ""
+            if chosen_label.startswith("(авто:") or chosen_label in ("(не определено)", ""):
+                st.session_state.col_type_overrides_by_sheet[sh][col_name] = None
+            else:
+                st.session_state.col_type_overrides_by_sheet[sh][col_name] = label_to_key.get(chosen_label)
 
         cols_sh = _selected_columns(sh)
         if not cols_sh:
@@ -1011,50 +1027,7 @@ for tab, sh in zip(sheet_tabs, selected_sheets):
         with st.expander(f"Превью данных ({len(cols_sh)} колонок, первые 10 строк)", expanded=False):
             st.dataframe(df_sh[cols_sh].head(10), use_container_width=True, hide_index=True)
 
-        st.markdown("**Тип алгоритма для каждой колонки** — при необходимости переопределите автодетект.")
-        for col in cols_sh:
-            scan = _get_scan(sh, col)
-            detected = scan.detected_type if scan else None
-            score = scan.confidence if scan else 0.0
-
-            with st.container():
-                label_left, label_mid, label_right = st.columns([2, 2, 3])
-                with label_left:
-                    st.markdown(f"**`{col}`**")
-                with label_mid:
-                    if detected:
-                        icon = "✅" if score >= 0.75 else ("🟡" if score >= 0.5 else "❓")
-                        st.markdown(
-                            f"{icon} **{LABELS[detected]}** "
-                            f"<span style='color:#8C8C8C;font-size:0.85em'>({score:.0%})</span>",
-                            unsafe_allow_html=True,
-                        )
-                    else:
-                        st.markdown("❓ Тип не распознан")
-                with label_right:
-                    current_override = st.session_state.col_type_overrides_by_sheet[sh].get(col)
-                    default_index = 0
-                    if current_override:
-                        default_index = 1 + list(REGISTRY.keys()).index(current_override)
-
-                    def _fmt(opt: str, _detected=detected) -> str:
-                        if opt == "(авто)":
-                            return f"(авто: {LABELS[_detected]})" if _detected else "(не определено)"
-                        return LABELS[opt]
-
-                    choice = st.selectbox(
-                        "Тип алгоритма",
-                        options=type_options_with_auto,
-                        index=default_index,
-                        format_func=_fmt,
-                        key=f"type_override::{sh}::{col}",
-                        label_visibility="collapsed",
-                    )
-                    st.session_state.col_type_overrides_by_sheet[sh][col] = (
-                        None if choice == "(авто)" else choice
-                    )
-
-
+# ← здесь нет отступа, это уже вне цикла for tab, sh in zip(...)
 per_sheet_cols: dict[str, list[str]] = {sh: _selected_columns(sh) for sh in selected_sheets}
 total_cols = sum(len(v) for v in per_sheet_cols.values())
 missing: list[tuple[str, str]] = [
@@ -1075,15 +1048,14 @@ if missing:
         + ". Переопределите тип вручную."
     )
 
-
 # ---------------------------------------------------------------------------
 # Шаг 4. Запуск алгоритмов
 # ---------------------------------------------------------------------------
-_step_header(3, "Запуск алгоритмов", f"{total_cols} колонок · {len(selected_sheets)} листов")
+_step_header(3, "Первичный поиск групп данных для нормализации", "Запустите поиск")
 
 run_disabled = bool(missing)
 run_clicked = st.button(
-    f"▶ Запустить нормализацию",
+    f"▶ Запустить поиск",
     type="primary",
     disabled=run_disabled,
     use_container_width=True,
@@ -1137,7 +1109,7 @@ if run_clicked:
 has_any_results = any(st.session_state.results_by_sheet.get(sh) for sh in selected_sheets)
 
 if has_any_results:
-    _step_header(4, "Кандидаты на объединение", "Отметьте группы для нормализации")
+    _step_header(4, "Верификация", "Отметьте группы для нормализации")
 
     sheets_with_res = [sh for sh in selected_sheets if st.session_state.results_by_sheet.get(sh)]
     res_sheet_tabs = st.tabs([f"📋 {sh}" for sh in sheets_with_res])
@@ -1228,10 +1200,10 @@ if has_any_results:
 # Шаг 6. Применение и экспорт
 # ---------------------------------------------------------------------------
 if has_any_results:
-    _step_header(5, "Применение и экспорт")
+    _step_header(5, "Выполнение нормализации")
 
     apply_clicked = st.button(
-        "🛠 Выполнить нормализацию по всем выбранным листам",
+        "🛠 Выполнить нормализацию",
         type="primary",
         use_container_width=True,
     )
