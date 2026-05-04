@@ -1044,7 +1044,7 @@ for tab, sh in zip(sheet_tabs, selected_sheets):
             col_name = str(row["Колонка"])
             st.session_state.col_selected_by_sheet[sh][col_name] = bool(row["Включить"])
 
-            chosen_label = row["Тип алгоритма"]
+            chosen_label = str(row["Тип алгоритма"]) if not isinstance(row["Тип алгоритма"], float) else ""
             if chosen_label.startswith("(авто:") or chosen_label == "(не определено)":
                 st.session_state.col_type_overrides_by_sheet[sh][col_name] = None
             else:
