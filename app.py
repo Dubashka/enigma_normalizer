@@ -982,43 +982,10 @@ for tab, sh in zip(sheet_tabs, selected_sheets):
             continue
 
         scan_df = pd.DataFrame(scan_rows)
-        # Определяем текущий выбранный тип для отображения в таблице
-        current_override = st.session_state.col_type_overrides_by_sheet[sh].get(s.column)
-        if current_override:
-            type_choice = LABELS.get(current_override, current_override)
-        else:
-            type_choice = f"(авто: {LABELS[s.detected_type]})" if s.detected_type else "(не определено)"
-
-        scan_rows.append({
-            "Включить": st.session_state.col_selected_by_sheet[sh].get(s.column, s.recommended),
-            "Колонка": s.column,
-            "Распознанный тип": type_label,
-            "Уверенность": f"{s.confidence:.0%}" if s.detected_type else "—",
-            "Оценка": badge,
-            "Непустых": s.non_empty,
-            "Тип алгоритма": type_choice,
-            "_detected_type": s.detected_type or "",
-        })
-
-        if not scan_rows:
-            st.warning("⚠️ В листе не обнаружено колонок.")
-            continue
-
-        scan_df = pd.DataFrame(scan_rows)
-
-        # Все возможные опции для SelectboxColumn
-        auto_options = [
-            f"(авто: {LABELS[s.detected_type]})" if s.detected_type else "(не определено)"
-            for s in scans
-        ]
-        manual_options = [LABELS[k] for k in REGISTRY.keys()]
-        all_type_options = list(dict.fromkeys(auto_options + manual_options))
-
         edited_scan = st.data_editor(
             scan_df,
             use_container_width=True,
             hide_index=True,
-            column_order=["Включить", "Колонка", "Распознанный тип", "Уверенность", "Оценка", "Непустых", "Тип алгоритма"],
             disabled=["Колонка", "Распознанный тип", "Уверенность", "Оценка", "Непустых"],
             column_config={
                 "Включить": st.column_config.CheckboxColumn("Включить", width="small"),
@@ -1027,28 +994,11 @@ for tab, sh in zip(sheet_tabs, selected_sheets):
                 "Уверенность": st.column_config.TextColumn("Уверенность", width="small"),
                 "Оценка": st.column_config.TextColumn("Оценка", width="small"),
                 "Непустых": st.column_config.NumberColumn("Непустых", width="small"),
-                "Тип алгоритма": st.column_config.SelectboxColumn(
-                    "Тип алгоритма",
-                    options=all_type_options,
-                    width="medium",
-                    required=True,
-                ),
             },
             key=f"scan_editor::{sh}",
         )
-
-        # Обратный маппинг: label -> registry key
-        label_to_key = {v: k for k, v in LABELS.items()}
-
         for _, row in edited_scan.iterrows():
-            col_name = str(row["Колонка"])
-            st.session_state.col_selected_by_sheet[sh][col_name] = bool(row["Включить"])
-
-            chosen_label = row["Тип алгоритма"]
-            if chosen_label.startswith("(авто:") or chosen_label == "(не определено)":
-                st.session_state.col_type_overrides_by_sheet[sh][col_name] = None
-            else:
-                st.session_state.col_type_overrides_by_sheet[sh][col_name] = label_to_key.get(chosen_label)
+            st.session_state.col_selected_by_sheet[sh][str(row["Колонка"])] = bool(row["Включить"])
 
         cols_sh = _selected_columns(sh)
         if not cols_sh:
@@ -1060,6 +1010,49 @@ for tab, sh in zip(sheet_tabs, selected_sheets):
 
         with st.expander(f"Превью данных ({len(cols_sh)} колонок, первые 10 строк)", expanded=False):
             st.dataframe(df_sh[cols_sh].head(10), use_container_width=True, hide_index=True)
+
+        st.markdown("**Тип алгоритма для каждой колонки** — при необходимости переопределите автодетект.")
+        for col in cols_sh:
+            scan = _get_scan(sh, col)
+            detected = scan.detected_type if scan else None
+            score = scan.confidence if scan else 0.0
+
+            with st.container():
+                label_left, label_mid, label_right = st.columns([2, 2, 3])
+                with label_left:
+                    st.markdown(f"**`{col}`**")
+                with label_mid:
+                    if detected:
+                        icon = "✅" if score >= 0.75 else ("🟡" if score >= 0.5 else "❓")
+                        st.markdown(
+                            f"{icon} **{LABELS[detected]}** "
+                            f"<span style='color:#8C8C8C;font-size:0.85em'>({score:.0%})</span>",
+                            unsafe_allow_html=True,
+                        )
+                    else:
+                        st.markdown("❓ Тип не распознан")
+                with label_right:
+                    current_override = st.session_state.col_type_overrides_by_sheet[sh].get(col)
+                    default_index = 0
+                    if current_override:
+                        default_index = 1 + list(REGISTRY.keys()).index(current_override)
+
+                    def _fmt(opt: str, _detected=detected) -> str:
+                        if opt == "(авто)":
+                            return f"(авто: {LABELS[_detected]})" if _detected else "(не определено)"
+                        return LABELS[opt]
+
+                    choice = st.selectbox(
+                        "Тип алгоритма",
+                        options=type_options_with_auto,
+                        index=default_index,
+                        format_func=_fmt,
+                        key=f"type_override::{sh}::{col}",
+                        label_visibility="collapsed",
+                    )
+                    st.session_state.col_type_overrides_by_sheet[sh][col] = (
+                        None if choice == "(авто)" else choice
+                    )
 
 
 per_sheet_cols: dict[str, list[str]] = {sh: _selected_columns(sh) for sh in selected_sheets}
