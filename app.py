@@ -1,7 +1,7 @@
 """Streamlit-стенд для тестирования алгоритмов нормализации данных.
 
 Пошаговый UX:
-1. Загрузка Excel-файла.
+1. Загрузка Excel-файла или CSV-файла.
 2. Выбор листа. Система сама сканирует все колонки и предлагает
    те, для которых есть алгоритм. Пользователь может снять/поставить
    галочки для любой колонки.
@@ -10,7 +10,7 @@
 4. Запуск алгоритмов — каждая колонка обрабатывается своим алгоритмом.
 5. Интерактивное подтверждение кандидатов по каждой колонке (галочки).
 6. Применение нормализации и скачивание:
-   - нормализованный Excel,
+   - нормализованный Excel (и CSV, если загружался CSV),
    - JSON-справочник маппингов (по всем колонкам).
 """
 from __future__ import annotations
@@ -578,6 +578,7 @@ def _empty_state(icon: str, title: str, desc: str) -> None:
 def _init_state():
     defaults = {
         "uploaded_name": None,
+        "is_csv": False,
         "sheets_data": {},
         "sheets": [],
         "active_sheet": None,
@@ -618,6 +619,23 @@ def _read_excel(file_bytes: bytes) -> dict[str, pd.DataFrame]:
     return {name: pd.read_excel(xls, sheet_name=name, dtype=object) for name in xls.sheet_names}
 
 
+@st.cache_data(show_spinner=False)
+def _read_csv(file_bytes: bytes) -> dict[str, pd.DataFrame]:
+    """Читаем CSV-файл, автоматически определяя разделитель (запятая или точка с запятой)."""
+    # Пробуем определить разделитель по содержимому файла
+    sample = file_bytes[:4096].decode("utf-8-sig", errors="replace")
+    sep = ";" if sample.count(";") >= sample.count(",") else ","
+    for encoding in ("utf-8-sig", "utf-8", "cp1251", "latin-1"):
+        try:
+            df = pd.read_csv(io.BytesIO(file_bytes), sep=sep, dtype=object, encoding=encoding)
+            return {"Sheet1": df}
+        except Exception:
+            continue
+    # Последняя попытка с движком Python (более гибкий парсинг)
+    df = pd.read_csv(io.BytesIO(file_bytes), sep=sep, dtype=object, encoding="utf-8", engine="python")
+    return {"Sheet1": df}
+
+
 def _reset_after_upload():
     for key in (
         "sheets", "active_sheet", "scans_by_sheet", "col_selected_by_sheet",
@@ -631,6 +649,7 @@ def _reset_after_upload():
         else:
             st.session_state[key] = None
     st.session_state.applied = False
+    st.session_state.is_csv = False
 
 
 def _ensure_sheet_state(sheet: str):
@@ -811,22 +830,28 @@ else:
 # ---------------------------------------------------------------------------
 # Шаг 1. Загрузка файла
 # ---------------------------------------------------------------------------
-_step_header(1, "Загрузка Excel-файла")
+_step_header(1, "Загрузка файла Excel или CSV")
 
 uploaded = st.file_uploader(
-    "Выберите .xlsx файл",
-    type=["xlsx", "xls"],
+    "Выберите .xlsx, .xls или .csv файл",
+    type=["xlsx", "xls", "csv"],
     accept_multiple_files=False,
     label_visibility="collapsed",
-    help="Поддерживаются форматы .xlsx и .xls",
+    help="Поддерживаются форматы .xlsx, .xls и .csv",
 )
 
 if uploaded is not None:
     if st.session_state.uploaded_name != uploaded.name:
         _reset_after_upload()
         st.session_state.uploaded_name = uploaded.name
+        file_ext = Path(uploaded.name).suffix.lower()
         with st.spinner("Читаю файл…"):
-            st.session_state.sheets_data = _read_excel(uploaded.getvalue())
+            if file_ext == ".csv":
+                st.session_state.sheets_data = _read_csv(uploaded.getvalue())
+                st.session_state.is_csv = True
+            else:
+                st.session_state.sheets_data = _read_excel(uploaded.getvalue())
+                st.session_state.is_csv = False
     sheet_count = len(st.session_state.sheets_data)
 
 
@@ -834,7 +859,7 @@ if not st.session_state.sheets_data:
     _empty_state(
         "📂",
         "Файл не загружен",
-        "Загрузите Excel-файл (.xlsx или .xls), чтобы начать нормализацию.",
+        "Загрузите Excel-файл (.xlsx или .xls) или CSV-файл (.csv), чтобы начать нормализацию.",
     )
     st.stop()
 
@@ -1389,6 +1414,12 @@ if has_any_results:
                     combined = pd.concat([before, after], axis=1)[ordered_cols]
                     st.dataframe(combined, use_container_width=True, hide_index=True)
 
+        base_name = (
+            Path(st.session_state.uploaded_name).stem
+            if st.session_state.uploaded_name else "normalized"
+        )
+
+        # Формируем нормализованный Excel (всегда доступен)
         xlsx_buffer = io.BytesIO()
         with pd.ExcelWriter(xlsx_buffer, engine="xlsxwriter") as writer:
             for name, sdf in st.session_state.sheets_data.items():
@@ -1399,27 +1430,60 @@ if has_any_results:
                 else:
                     sdf.to_excel(writer, sheet_name=name, index=False)
 
-        base_name = (
-            Path(st.session_state.uploaded_name).stem
-            if st.session_state.uploaded_name else "normalized"
-        )
-        col_dl_1, col_dl_2 = st.columns([1, 1])
-        with col_dl_1:
-            st.download_button(
-                "⬇ Скачать нормализованный Excel",
-                data=xlsx_buffer.getvalue(),
-                file_name=f"{base_name}__normalized.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                use_container_width=True,
-                key="dl_normalized_excel",
-            )
-        with col_dl_2:
-            mapping_xlsx = _build_mapping_excel(payload)
-            st.download_button(
-                "⬇ Скачать Excel-справочник маппингов",
-                data=mapping_xlsx,
-                file_name=f"{base_name}__mapping.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                use_container_width=True,
-                key="dl_mapping_excel",
-            )
+        mapping_xlsx = _build_mapping_excel(payload)
+
+        if st.session_state.is_csv:
+            # Для CSV-файлов предлагаем скачать результат обратно в CSV
+            norm_df_csv = st.session_state.normalized_by_sheet.get("Sheet1")
+            if norm_df_csv is None:
+                norm_df_csv = next(iter(st.session_state.normalized_by_sheet.values()))
+            csv_bytes = norm_df_csv.to_csv(index=False, sep=";").encode("utf-8-sig")
+
+            col_dl_1, col_dl_2, col_dl_3 = st.columns([1, 1, 1])
+            with col_dl_1:
+                st.download_button(
+                    "⬇ Скачать нормализованный CSV",
+                    data=csv_bytes,
+                    file_name=f"{base_name}__normalized.csv",
+                    mime="text/csv",
+                    use_container_width=True,
+                    key="dl_normalized_csv",
+                )
+            with col_dl_2:
+                st.download_button(
+                    "⬇ Скачать нормализованный Excel",
+                    data=xlsx_buffer.getvalue(),
+                    file_name=f"{base_name}__normalized.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True,
+                    key="dl_normalized_excel",
+                )
+            with col_dl_3:
+                st.download_button(
+                    "⬇ Скачать Excel-справочник маппингов",
+                    data=mapping_xlsx,
+                    file_name=f"{base_name}__mapping.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True,
+                    key="dl_mapping_excel",
+                )
+        else:
+            col_dl_1, col_dl_2 = st.columns([1, 1])
+            with col_dl_1:
+                st.download_button(
+                    "⬇ Скачать нормализованный Excel",
+                    data=xlsx_buffer.getvalue(),
+                    file_name=f"{base_name}__normalized.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True,
+                    key="dl_normalized_excel",
+                )
+            with col_dl_2:
+                st.download_button(
+                    "⬇ Скачать Excel-справочник маппингов",
+                    data=mapping_xlsx,
+                    file_name=f"{base_name}__mapping.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True,
+                    key="dl_mapping_excel",
+                )
